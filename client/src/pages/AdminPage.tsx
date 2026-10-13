@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import type { Drive, LatLng, Tree, User } from '../types';
-import { createGlobalDrive, fetchAdminStats, fetchAdminTrees, fetchAdminUsers } from '../services/api';
+import { createGlobalDrive, fetchAdminStats, fetchAdminUsers } from '../services/api';
 import { geocodeLocation } from '../utils/geo';
 import { timeAgo } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
@@ -14,6 +14,7 @@ import { Spinner } from '../components/ui/spinner';
 import { MiniMap } from '../components/MiniMap';
 import { DriveView } from '../components/DriveView';
 import { DrivesBrowser } from '../components/DrivesBrowser';
+import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
@@ -23,7 +24,7 @@ const TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'drives' as const, label: 'Drives' },
   { value: 'trees' as const, label: 'Trees' },
-  { value: 'users' as const, label: 'People' },
+  { value: 'users' as const, label: 'Users' },
 ];
 
 // Mumbai, when we don't know where you are
@@ -43,8 +44,13 @@ const SearchBox: React.FC<{ value: string; onChange: (v: string) => void; placeh
   </div>
 );
 
-/** Paged, searchable admin list (trees or people). */
-function usePagedList<T>(fetcher: (page: number, limit: number, search: string) => Promise<{ success: boolean; data: T[]; total: number; totalPages: number }>) {
+const USERS_PER_PAGE = 10;
+
+/** Paged, searchable admin list. */
+function usePagedList<T>(
+  fetcher: (page: number, limit: number, search: string) => Promise<{ success: boolean; data: T[]; total: number; totalPages: number }>,
+  pageSize: number
+) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ rows: T[]; total: number; totalPages: number } | null>(null);
@@ -53,7 +59,7 @@ function usePagedList<T>(fetcher: (page: number, limit: number, search: string) 
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      fetcher(page, 20, search.trim()).then(
+      fetcher(page, pageSize, search.trim()).then(
         (res) => !cancelled && setData({ rows: res.data, total: res.total, totalPages: res.totalPages }),
         () => !cancelled && setError(true)
       );
@@ -76,51 +82,25 @@ const Overview: React.FC = () => {
   return (
     <div className="grid grid-cols-2 gap-3">
       <Stat value={stats?.totalTrees ?? '–'} label="trees on the map" />
-      <Stat value={stats?.totalUsers ?? '–'} label="people signed up" />
+      <Stat value={stats?.totalUsers ?? '–'} label="users signed up" />
     </div>
   );
 };
 
-const TreesList: React.FC = () => {
-  const list = usePagedList<Tree>(fetchAdminTrees);
+const UsersList: React.FC = () => {
+  const list = usePagedList<User & { createdAt: string }>(fetchAdminUsers, USERS_PER_PAGE);
   return (
     <div className="flex flex-col gap-4">
-      <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search trees by name or kind" />
-      {list.error && <Alert tone="error">Couldn't load trees. Refresh to try again.</Alert>}
+      <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search users by name or email" />
+      {list.error && <Alert tone="error">Couldn't load users. Refresh to try again.</Alert>}
       {!list.data ? (
         <Spinner />
       ) : (
         <>
-          <p className="text-muted-foreground">{list.data.total} trees</p>
-          <ul className="divide-y divide-border">
-            {list.data.rows.map((t) => (
-              <li key={t.id} className="flex items-center gap-4 py-3">
-                <img src={t.photoUrl} alt="" className="size-12 shrink-0 rounded-xl bg-muted object-cover" loading="lazy" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{t.name}</p>
-                  <p className="truncate text-sm text-muted-foreground">{t.species}{t.address ? ` · ${t.address}` : ''}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <Pager page={list.page} totalPages={list.data.totalPages} onPage={list.setPage} />
-        </>
-      )}
-    </div>
-  );
-};
-
-const PeopleList: React.FC = () => {
-  const list = usePagedList<User & { createdAt: string }>(fetchAdminUsers);
-  return (
-    <div className="flex flex-col gap-4">
-      <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search people by name or email" />
-      {list.error && <Alert tone="error">Couldn't load people. Refresh to try again.</Alert>}
-      {!list.data ? (
-        <Spinner />
-      ) : (
-        <>
-          <p className="text-muted-foreground">{list.data.total} people</p>
+          <p className="text-muted-foreground">
+            {list.data.total} {list.data.total === 1 ? 'user' : 'users'}
+            {list.search.trim() ? ` matching "${list.search.trim()}"` : ''}
+          </p>
           <ul className="divide-y divide-border">
             {list.data.rows.map((u) => (
               <li key={u.id} className="flex items-center gap-4 py-3">
@@ -133,7 +113,16 @@ const PeopleList: React.FC = () => {
               </li>
             ))}
           </ul>
-          <Pager page={list.page} totalPages={list.data.totalPages} onPage={list.setPage} />
+          {list.data.rows.length === 0 && <p className="py-4 text-center text-muted-foreground">No users match that search.</p>}
+          <Pager
+            page={list.page}
+            totalPages={list.data.totalPages}
+            onPage={list.setPage}
+            alwaysShow
+            total={list.data.total}
+            pageSize={USERS_PER_PAGE}
+            noun={list.data.total === 1 ? 'user' : 'users'}
+          />
         </>
       )}
     </div>
@@ -245,7 +234,12 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
   );
 };
 
-export const AdminPage: React.FC<{ you: LatLng | null; onClose: () => void; onShowDriveOnMap: (d: Drive) => void }> = ({ you, onClose, onShowDriveOnMap }) => {
+export const AdminPage: React.FC<{
+  you: LatLng | null;
+  onClose: () => void;
+  onShowDriveOnMap: (d: Drive) => void;
+  onShowTreeOnMap: (t: Tree) => void;
+}> = ({ you, onClose, onShowDriveOnMap, onShowTreeOnMap }) => {
   const [tab, setTab] = useState<Tab>('overview');
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
@@ -269,8 +263,8 @@ export const AdminPage: React.FC<{ you: LatLng | null; onClose: () => void; onSh
             }
           />
         )}
-        {tab === 'trees' && <TreesList />}
-        {tab === 'users' && <PeopleList />}
+        {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
+        {tab === 'users' && <UsersList />}
       </Page>
 
       {drive && (

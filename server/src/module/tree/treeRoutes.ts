@@ -4,7 +4,8 @@ import {
   getTreeById,
   createTree,
   updateTree,
-  deleteTree
+  deleteTree,
+  browseTrees
 } from './treeController';
 import {
   addCareLog,
@@ -17,6 +18,8 @@ const router = Router();
 
 // Public Map Routes
 router.get('/', getAllTrees);
+// Paged lists; before '/:id' so "browse" isn't read as an id
+router.get('/browse', browseTrees);
 router.get('/:id', getTreeById);
 router.get('/:treeId/care', getTreeCareHistory);
 

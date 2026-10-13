@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
 import { MapPin, Plus, Search, X } from 'lucide-react';
 import type { Tree, LatLng } from '../../types';
 import { useSearch } from '../../lib/search';
-import { STATUS_LABEL, isDemoTree, shortSpecies, treeStatus } from '../../lib/trees';
+import { browseTrees, type Paged } from '../../services/api';
+import { cn } from '../../lib/cn';
+import { Pager } from '../ui/pager';
+import { STATUS_LABEL, shortSpecies, treeStatus } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters } from '../../utils/geo';
 import { Chips } from '../ui/chips';
 import { StatusDot } from '../ui/badge';
@@ -11,6 +15,9 @@ import { Sapling } from '../ui/logo';
 import { Spinner } from '../ui/spinner';
 
 export type DistanceFilter = 'ALL' | '100' | '500' | '1000';
+export type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
+
+const PAGE_SIZE = 10;
 
 const DISTANCES = [
   { value: 'ALL' as const, label: 'Any distance' },
@@ -22,9 +29,10 @@ const DISTANCES = [
 const distanceTo = (you: LatLng | null, t: Tree) => (you ? getDistanceInMeters(you.lat, you.lng, t.latitude, t.longitude) : null);
 
 /** One tree in a list: status dot, name, species and status, distance on the right. */
-export const TreeRow: React.FC<{ tree: Tree; you: LatLng | null; onSelect: (tree: Tree) => void }> = ({ tree, you, onSelect }) => {
+export const TreeRow: React.FC<{ tree: Tree & { distance?: number }; you: LatLng | null; onSelect: (tree: Tree) => void }> = ({ tree, you, onSelect }) => {
   const status = treeStatus(tree);
-  const meters = distanceTo(you, tree);
+  // The server works out the distance for listed trees; sample trees are measured here
+  const meters = tree.distance ?? distanceTo(you, tree);
   return (
     <li>
       <button
@@ -45,11 +53,14 @@ export const TreeRow: React.FC<{ tree: Tree; you: LatLng | null; onSelect: (tree
   );
 };
 
-/** The sheet's resting content: search, distance filter and the trees around you. */
+/**
+ * The sheet's resting content: search, distance filter and the trees around you, 10 at a time.
+ * The server filters, sorts (nearest first) and pages the list; the browser only shows one page.
+ * While there are no real trees yet, the client-side `samples` are shown instead.
+ */
 export const NearbyPanel: React.FC<{
-  trees: Tree[];
-  allTrees: Tree[];
   you: LatLng | null;
+  status: StatusFilter;
   query: string;
   onQueryChange: (q: string) => void;
   onSearchFocus: () => void;
@@ -58,19 +69,73 @@ export const NearbyPanel: React.FC<{
   onSelectTree: (tree: Tree) => void;
   onSelectPlace: (place: LatLng) => void;
   onPlant: () => void;
-}> = ({ trees, allTrees, you, query, onQueryChange, onSearchFocus, distance, onDistanceChange, onSelectTree, onSelectPlace, onPlant }) => {
-  const search = useSearch(query, allTrees);
+  /** Sample trees to list when the server has none */
+  samples: Tree[] | null;
+  /** Bump to reload (after planting, caring, editing or removing a tree) */
+  refreshKey: number;
+  /** Reports how many trees match, for the header */
+  onTotal: (total: number | null) => void;
+}> = ({ you, status, query, onQueryChange, onSearchFocus, distance, onDistanceChange, onSelectTree, onSelectPlace, onPlant, samples, refreshKey, onTotal }) => {
+  const search = useSearch(query, you);
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<Paged<Tree & { distance?: number }> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
-  const sorted = you
-    ? [...trees].sort((a, b) => (distanceTo(you, a) ?? 0) - (distanceTo(you, b) ?? 0))
-    : [...trees].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const showingDemo = trees.length > 0 && trees.every(isDemoTree);
+  // Only the rough area (about 100 m) matters, so GPS jitter doesn't reload the list
+  const area = you ? `${you.lat.toFixed(3)},${you.lng.toFixed(3)}` : '';
+  const radius = distance === 'ALL' ? null : Number(distance);
+
+  // A new filter starts again from page 1
+  useEffect(() => setPage(1), [status, distance, area]);
+
+  useEffect(() => {
+    if (samples) return;
+    let cancelled = false;
+    setLoading(true);
+    browseTrees({
+      page,
+      limit: PAGE_SIZE,
+      near: you,
+      radius,
+      status: status === 'THIRSTY' ? 'thirsty' : status === 'HEALTHY' ? 'healthy' : 'all',
+      mine: status === 'MINE',
+    }).then(
+      (res) => {
+        if (cancelled) return;
+        setResult(res);
+        setFailed(false);
+        setLoading(false);
+        onTotal(res.total);
+      },
+      () => {
+        if (cancelled) return;
+        setFailed(true);
+        setLoading(false);
+        onTotal(null);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+    // `you` is represented by `area`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, status, radius, area, refreshKey, Boolean(samples)]);
+
+  useEffect(() => {
+    if (samples) onTotal(samples.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [samples?.length]);
+
+  const rows = samples ?? result?.data ?? [];
+  const showingDemo = Boolean(samples && samples.length > 0);
 
   return (
     <div className="flex flex-col gap-4 pb-4">
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
         <input
+          id="tree-search"
           type="search"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
@@ -144,22 +209,45 @@ export const NearbyPanel: React.FC<{
             </Alert>
           )}
 
-          {sorted.length === 0 ? (
+          {failed && !samples ? (
+            <Alert tone="error">Couldn't load trees. Check your connection and try again.</Alert>
+          ) : loading && !result && !samples ? (
+            <Spinner label="Loading trees" />
+          ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <Sapling />
               <p className="max-w-xs text-muted-foreground">
-                {distance !== 'ALL' ? 'No trees this close to you. Try a wider distance.' : 'No trees mapped here yet. Spotted one worth caring for? Add it to the map.'}
+                {status === 'MINE'
+                  ? "You haven't planted any trees yet."
+                  : status !== 'ALL'
+                    ? 'No trees match this filter.'
+                    : distance !== 'ALL'
+                      ? 'No trees this close to you. Try a wider distance.'
+                      : 'No trees mapped here yet. Spotted one worth caring for? Add it to the map.'}
               </p>
               <Button size="lg" onClick={onPlant}>
                 <Plus aria-hidden="true" /> Plant a tree
               </Button>
             </div>
           ) : (
-            <ul className="-mt-2 divide-y divide-border">
-              {sorted.slice(0, 40).map((t) => (
-                <TreeRow key={t.id} tree={t} you={you} onSelect={onSelectTree} />
-              ))}
-            </ul>
+            <>
+              <ul className={cn('-mt-2 divide-y divide-border transition-opacity', loading && 'opacity-60')} aria-busy={loading}>
+                {rows.map((t) => (
+                  <TreeRow key={t.id} tree={t} you={you} onSelect={onSelectTree} />
+                ))}
+              </ul>
+              {result && !samples && (
+                <Pager
+                  page={result.page}
+                  totalPages={result.totalPages}
+                  onPage={setPage}
+                  alwaysShow
+                  total={result.total}
+                  pageSize={PAGE_SIZE}
+                  noun={result.total === 1 ? 'tree' : 'trees'}
+                />
+              )}
+            </>
           )}
         </>
       )}

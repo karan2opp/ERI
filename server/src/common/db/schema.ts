@@ -24,7 +24,12 @@ export const trees = pgTable('trees', {
   longitude: doublePrecision('longitude').notNull(),
   address: varchar('address', { length: 500 }),
   healthScore: integer('health_score').default(100).notNull(),
+  // When the tree was actually planted (its "birth date"); can be earlier than when it was added to the map
+  plantedAt: timestamp('planted_at').defaultNow().notNull(),
+  // Last WATERED care log
   lastWateredAt: timestamp('last_watered_at'),
+  // Last care of any kind (watered, fed, pruned, checked)
+  lastCaredAt: timestamp('last_cared_at'),
   userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

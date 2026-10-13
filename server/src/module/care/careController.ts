@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
 import { trees, careLogs } from '../../common/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { isUuid } from '../../common/utils/validation';
 
@@ -51,19 +51,23 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
     const [newLog] = await db.insert(careLogs).values({
       treeId,
       actionType: validActionType,
-      notes: notes || 'Care update logged 💧',
+      notes: notes?.trim() || null,
       photoUrl,
       photoPublicId,
       userId,
       performedAt: now
     }).returning();
 
-    const bonusEligible = !tree.lastWateredAt
-      || now.getTime() - tree.lastWateredAt.getTime() >= HEALTH_BONUS_COOLDOWN_MS;
+    const watered = validActionType === 'WATERED';
+    // Watering and feeding restore health, at most once per cooldown
+    const bonusEligible = (watered || validActionType === 'FERTILIZED')
+      && (!tree.lastCaredAt || now.getTime() - tree.lastCaredAt.getTime() >= HEALTH_BONUS_COOLDOWN_MS);
 
     await db.update(trees)
       .set({
-        lastWateredAt: now,
+        // Only watering counts as watering; every kind of care counts as care
+        ...(watered ? { lastWateredAt: now } : {}),
+        lastCaredAt: now,
         healthScore: bonusEligible ? Math.min(100, (tree.healthScore || 80) + 10) : tree.healthScore,
         updatedAt: now
       })
@@ -83,6 +87,10 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
+/**
+ * GET /trees/:treeId/care?page=1&limit=10: one page of a tree's care history, newest first,
+ * with the total so the app can offer "show older entries".
+ */
 export const getTreeCareHistory = async (req: Request, res: Response) => {
   try {
     const { treeId } = req.params;
@@ -91,24 +99,36 @@ export const getTreeCareHistory = async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Tree not found' });
     }
 
-    const history = await db.query.careLogs.findMany({
-      where: eq(careLogs.treeId, treeId),
-      orderBy: (logs, { desc }) => [desc(logs.performedAt)],
-      with: {
-        performer: {
-          columns: {
-            id: true,
-            name: true,
-            avatarUrl: true
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+
+    const [history, [{ count }]] = await Promise.all([
+      db.query.careLogs.findMany({
+        where: eq(careLogs.treeId, treeId),
+        orderBy: (logs, { desc }) => [desc(logs.performedAt)],
+        limit,
+        offset: (page - 1) * limit,
+        with: {
+          performer: {
+            columns: {
+              id: true,
+              name: true,
+              avatarUrl: true
+            }
           }
         }
-      }
-    });
+      }),
+      db.select({ count: sql<number>`count(*)` }).from(careLogs).where(eq(careLogs.treeId, treeId)),
+    ]);
 
+    const total = Number(count);
     return res.status(200).json({
       success: true,
-      count: history.length,
-      data: history
+      data: history,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   } catch (error) {
     console.error('Error fetching care history:', error);

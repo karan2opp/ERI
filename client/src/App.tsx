@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
-import { CheckCircle2, LocateFixed, Plus } from 'lucide-react';
+import { Calendar, CheckCircle2, LocateFixed, Plus } from 'lucide-react';
 import type { Drive, LatLng, Tree } from './types';
 import { fetchAllTrees, fetchGlobalDrives, setAuthTokenGetter, syncCurrentUser } from './services/api';
 import { reconnectSocket } from './utils/socket';
-import { getDistanceInMeters } from './utils/geo';
-import { treeStatus, isDemoTree } from './lib/trees';
+import { formatDistance, formatMinutes, getDistanceInMeters } from './utils/geo';
+import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
 import { sampleTreesAround } from './lib/demo';
 import { useWalkingRoute } from './lib/route';
-import { isUpcoming, splitDrives } from './lib/drives';
+import { formatDriveDate, isUpcoming, splitDrives } from './lib/drives';
 import { cn } from './lib/cn';
 import { useIsDark } from './lib/theme';
 import { useTileSource } from './lib/tiles';
 import { GoogleCredit } from './components/map/MapCredit';
 import { TreeMap, type FlyToTarget } from './components/map/TreeMap';
 import { MapSheet, type SheetState } from './components/map/MapSheet';
+import { ItemPeek, NavigationPeek, SearchPeek } from './components/map/SheetPeek';
 import { NearbyPanel, type DistanceFilter } from './components/map/NearbyPanel';
 import { TreeDetails } from './components/map/TreeDetails';
 import { DriveDetails } from './components/map/DriveDetails';
@@ -181,8 +182,12 @@ function MapApp() {
   }, [you]);
 
   // ---- Trees ----
+  // The map's pins load every tree; lists page on the server and reload when listRefresh changes
+  const [listRefresh, setListRefresh] = useState(0);
+  const [listTotal, setListTotal] = useState<number | null>(null);
   const loadTrees = useCallback(() => {
     fetchAllTrees().then(setServerTrees, () => setServerTrees([]));
+    setListRefresh((k) => k + 1);
   }, []);
   useEffect(loadTrees, [loadTrees]);
 
@@ -287,9 +292,20 @@ function MapApp() {
   let sheetLabel = 'Trees near you';
   let sheetHeader: React.ReactNode = null;
   let sheetBody: React.ReactNode;
+  // What the sheet shows when swiped down on a phone: a compact bar for each situation
+  let sheetPeek: React.ReactNode = null;
+  const openSheet = () => setSheet('half');
 
   if (destination) {
     sheetLabel = 'Directions';
+    const left = remaining ?? route?.meters ?? null;
+    sheetPeek = (
+      <NavigationPeek
+        summary={left !== null ? `${formatMinutes(Math.max(1, Math.round(left / 80)))} · ${formatDistance(left)}` : `Walking to ${destination.name}`}
+        onOpen={openSheet}
+        onEnd={() => setDestination(null)}
+      />
+    );
     sheetBody = (
       <NavigationPanel
         name={destination.name}
@@ -302,6 +318,16 @@ function MapApp() {
     );
   } else if (selectedTree) {
     sheetLabel = 'Tree details';
+    sheetPeek = (
+      <ItemPeek
+        image={selectedTree.photoUrl}
+        title={selectedTree.name}
+        subtitle={`${selectedTree.species.split(' (')[0]} · ${STATUS_LABEL[treeStatus(selectedTree)]}`}
+        onOpen={openSheet}
+        onClose={clearSelection}
+        closeLabel="Close tree details"
+      />
+    );
     sheetBody = (
       <TreeDetails
         tree={selectedTree}
@@ -324,6 +350,16 @@ function MapApp() {
   } else if (selectedDrive) {
     const d = selectedDrive;
     sheetLabel = 'Planting drive';
+    sheetPeek = (
+      <ItemPeek
+        icon={<Calendar aria-hidden="true" />}
+        title={d.title}
+        subtitle={formatDriveDate(d)}
+        onOpen={openSheet}
+        onClose={clearSelection}
+        closeLabel="Close drive details"
+      />
+    );
     sheetBody = (
       <DriveDetails
         drive={d}
@@ -334,10 +370,20 @@ function MapApp() {
       />
     );
   } else {
+    sheetPeek = (
+      <SearchPeek
+        count={listTotal}
+        onOpen={() => {
+          setSheet('full');
+          // Focus the real search box once it's on screen
+          window.requestAnimationFrame(() => document.getElementById('tree-search')?.focus());
+        }}
+      />
+    );
     sheetHeader = (
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-xl">{you ? 'Trees near you' : 'Trees on the map'}</h2>
-        {serverTrees !== null && <span className="text-muted-foreground tabular-nums">{filtered.length}</span>}
+        {listTotal !== null && <span className="text-muted-foreground tabular-nums">{listTotal}</span>}
       </div>
     );
     sheetBody = (
@@ -348,8 +394,10 @@ function MapApp() {
           </Alert>
         )}
         <NearbyPanel
-          trees={filtered}
-          allTrees={trees}
+          status={status}
+          samples={serverTrees !== null && serverTrees.length === 0 ? trees : null}
+          refreshKey={listRefresh}
+          onTotal={setListTotal}
           you={you}
           query={query}
           onQueryChange={setQuery}
@@ -410,11 +458,11 @@ function MapApp() {
             // Floating controls: logo, Plant, account; then filters and locate-me
             <div className="top-safe pointer-events-none fixed inset-x-0 z-[1000] px-4 md:left-[27rem]">
               <div className="flex items-center gap-2">
-                <div className="pointer-events-auto flex h-14 min-w-0 items-center rounded-full bg-card pr-4 pl-2 shadow-float md:hidden">
-                  <Logo hideNameOnNarrow className="[&>img]:size-9" />
+                <div className="pointer-events-auto flex h-12 min-w-0 items-center rounded-full bg-card pr-3.5 pl-1.5 shadow-float md:hidden">
+                  <Logo hideNameOnNarrow className="gap-1.5 [&>img]:size-8" />
                 </div>
                 <div className="flex-1" />
-                <Button size="xl" onClick={startPlanting} className="pointer-events-auto h-14 px-5 shadow-float">
+                <Button size="xl" onClick={startPlanting} className="pointer-events-auto h-12 px-4 shadow-float md:h-14 md:px-5">
                   <Plus className="size-5!" aria-hidden="true" />
                   <span className="max-[399px]:hidden">Plant a tree</span>
                   <span className="min-[400px]:hidden">Plant</span>
@@ -462,6 +510,7 @@ function MapApp() {
             onStateChange={setSheet}
             label={sheetLabel}
             above={tiles?.google ? <GoogleCredit dark={dark} /> : undefined}
+            peek={sheetPeek}
             header={
               <>
                 <div className="mb-4 hidden md:block">
@@ -512,8 +561,6 @@ function MapApp() {
 
       {screen === 'myTrees' && (
         <MyTreesPage
-          trees={trees}
-          userId={userId}
           you={you}
           onClose={back}
           onShowOnMap={(t) => {
@@ -548,6 +595,10 @@ function MapApp() {
           onShowDriveOnMap={(d) => {
             back();
             showDrive(d);
+          }}
+          onShowTreeOnMap={(t) => {
+            back();
+            selectTree(t);
           }}
         />
       )}

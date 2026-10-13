@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from './button';
 import { cn } from '../../lib/cn';
@@ -16,6 +17,10 @@ export const TopBar: React.FC<{ title: string; onBack: () => void; action?: Reac
 /**
  * Full-screen page shell: top bar, a centred content column, and an optional
  * sticky footer for the page's one main action.
+ *
+ * Rendered straight into <body>. A page opened from inside another page (a tree's history inside
+ * Admin) would otherwise be positioned within its parent, because the parent's slide-in animation
+ * makes it the frame for "fixed" children, and the parent's content would show underneath.
  */
 export const Page: React.FC<{
   title: string;
@@ -26,7 +31,7 @@ export const Page: React.FC<{
   wide?: boolean;
 }> = ({ title, onBack, action, children, footer, wide }) => {
   const width = wide ? 'max-w-3xl' : 'max-w-xl';
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[1500] flex flex-col overflow-y-auto bg-background animate-rise">
       <TopBar title={title} onBack={onBack} action={action} />
       <main className={cn('mx-auto flex w-full flex-1 flex-col gap-6 p-4', width)}>{children}</main>
@@ -35,6 +40,7 @@ export const Page: React.FC<{
           <div className={cn('mx-auto w-full', width)}>{footer}</div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };

@@ -29,7 +29,13 @@ export interface Tree {
   longitude: number;
   address?: string;
   healthScore: number;
-  lastWateredAt?: string;
+  /** When it was planted (its "birth date"); can be earlier than when it was added to the map */
+  plantedAt: string;
+  lastWateredAt?: string | null;
+  /** Last care of any kind */
+  lastCaredAt?: string | null;
+  /** Admin lists include the owner's name */
+  ownerName?: string | null;
   userId: string;
   owner?: User;
   careLogs?: CareLog[];

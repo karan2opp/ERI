@@ -11,6 +11,7 @@ import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
+import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
 
 const OTHER = 'OTHER';
 
@@ -29,6 +30,11 @@ export const PlantTreePage: React.FC<{
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
+  // Defaults to now; change it to add a tree that was planted earlier
+  const [plantedDate, setPlantedDate] = useState(() => toLocalParts(new Date()).date);
+  const [plantedTime, setPlantedTime] = useState(() => toLocalParts(new Date()).time);
+  const plantedAt = fromLocalParts(plantedDate, plantedTime);
+  const plantedInFuture = plantedAt !== null && plantedAt.getTime() > Date.now() + 5 * 60 * 1000;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,13 +51,18 @@ export const PlantTreePage: React.FC<{
   }, [location?.lat, location?.lng]);
 
   const finalSpecies = species === OTHER ? customSpecies.trim() : species;
+  // What's still missing, shown on the button
   const blocker = !location
     ? 'Set the location to continue'
-    : !finalSpecies
-      ? 'Choose what kind of tree it is'
-      : !name.trim()
-        ? 'Give it a name to continue'
-        : null;
+    : !plantedAt
+      ? 'Choose when it was planted'
+      : plantedInFuture
+        ? "Planting time can't be in the future"
+        : !finalSpecies
+          ? 'Choose what kind of tree it is'
+          : !name.trim()
+            ? 'Give it a name to continue'
+            : null;
 
   const submit = async () => {
     if (blocker || !location || !finalSpecies) return;
@@ -65,6 +76,7 @@ export const PlantTreePage: React.FC<{
       form.append('address', address.trim());
       form.append('latitude', String(location.lat));
       form.append('longitude', String(location.lng));
+      if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
       if (photo) form.append('photo', photo);
       onPlanted(await createTree(form));
     } catch (err) {
@@ -123,6 +135,14 @@ export const PlantTreePage: React.FC<{
           <Input value={customSpecies} onChange={(e) => setCustomSpecies(e.target.value)} placeholder="e.g. Silver oak" aria-label="Kind of tree" maxLength={255} autoFocus />
         )}
       </Field>
+
+      <PlantedAtField
+        date={plantedDate}
+        time={plantedTime}
+        onDate={setPlantedDate}
+        onTime={setPlantedTime}
+        description="Planting it now? Leave this as it is. Adding an older tree? Set when it was planted, and its age is counted from then."
+      />
 
       <Field label="Name it" htmlFor="tree-name" description="Something people can find it by, like a landmark next to it.">
         <Input id="tree-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Neem by the school gate" maxLength={255} />

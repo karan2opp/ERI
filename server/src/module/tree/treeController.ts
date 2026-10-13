@@ -1,11 +1,21 @@
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
-import { trees, careLogs } from '../../common/db/schema';
-import { eq } from 'drizzle-orm';
+import { trees, careLogs, users } from '../../common/db/schema';
+import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { getAuth } from '@clerk/express';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
+
+// When a tree was planted: not in the future (a few minutes' clock skew allowed), not absurdly old
+const plantedAtSchema = z.coerce
+  .date()
+  .refine((d) => d.getTime() <= Date.now() + 5 * 60 * 1000, 'Planting date cannot be in the future')
+  .refine((d) => d.getFullYear() >= 1900, 'Planting date is too far in the past');
+
+// Within this long of planting, adding the tree counts as its first watering
+const JUST_PLANTED_MS = 24 * 60 * 60 * 1000;
 
 const createTreeSchema = z.object({
   name: z.string().trim().min(1).max(255),
@@ -14,6 +24,7 @@ const createTreeSchema = z.object({
   address: z.string().trim().max(500).optional(),
   latitude: latitudeSchema,
   longitude: longitudeSchema,
+  plantedAt: plantedAtSchema.optional(),
 });
 
 const updateTreeSchema = z.object({
@@ -22,6 +33,7 @@ const updateTreeSchema = z.object({
   description: z.string().trim().max(5000).optional(),
   address: z.string().trim().max(500).optional(),
   healthScore: z.coerce.number().int().min(0).max(100).optional(),
+  plantedAt: plantedAtSchema.optional(),
 });
 
 const validationError = (error: z.ZodError) =>
@@ -78,8 +90,10 @@ export const getTreeById = async (req: Request, res: Response) => {
             avatarUrl: true
           }
         },
+        // Just the latest entry (for "last cared for"); the full history is paged at GET /trees/:id/care
         careLogs: {
           orderBy: (logs, { desc }) => [desc(logs.performedAt)],
+          limit: 1,
           with: {
             performer: {
               columns: {
@@ -126,6 +140,11 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const { name, species, description, latitude, longitude, address } = parsed.data;
+    const now = new Date();
+    const plantedAt = parsed.data.plantedAt ?? now;
+    // Planted just now: that planting is its first watering. An older tree being added to the map
+    // has no known watering yet, so it starts as "needs water" until someone logs one.
+    const justPlanted = now.getTime() - plantedAt.getTime() < JUST_PLANTED_MS;
 
     let photoUrl = 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=1000&q=80';
     let photoPublicId: string | undefined;
@@ -146,18 +165,20 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       longitude,
       address: address || '',
       userId,
-      lastWateredAt: new Date(),
+      plantedAt,
+      lastWateredAt: justPlanted ? plantedAt : null,
+      lastCaredAt: justPlanted ? plantedAt : now,
       healthScore: 100
     }).returning();
 
     await db.insert(careLogs).values({
       treeId: newTree.id,
-      actionType: 'WATERED',
-      notes: 'Initial planting & registration care log 🌿',
+      actionType: justPlanted ? 'WATERED' : 'INSPECTED',
+      notes: justPlanted ? 'Planted and watered' : 'Added to the map',
       photoUrl: newTree.photoUrl,
       photoPublicId: newTree.photoPublicId,
       userId,
-      performedAt: new Date()
+      performedAt: justPlanted ? plantedAt : now
     });
 
     return res.status(201).json({
@@ -191,7 +212,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const { name, species, description, address, healthScore } = parsed.data;
+    const { name, species, description, address, healthScore, plantedAt } = parsed.data;
 
     const [existingTree] = await db.select().from(trees).where(eq(trees.id, id));
 
@@ -229,6 +250,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
         description: description !== undefined ? description : existingTree.description,
         address: address !== undefined ? address : existingTree.address,
         healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
+        plantedAt: plantedAt ?? existingTree.plantedAt,
         photoUrl,
         photoPublicId,
         updatedAt: new Date()
@@ -291,5 +313,116 @@ export const deleteTree = async (req: AuthenticatedRequest, res: Response) => {
       success: false,
       error: 'Failed to delete tree'
     });
+  }
+};
+
+// ---------- Paged tree lists ----------
+
+// A tree needs water once it has gone this long without watering (same rule as the app)
+const THIRSTY_AFTER_MS = 48 * 60 * 60 * 1000;
+const likePattern = (search: string) => `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+
+const browseQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+  // Where you are: sorts by distance and enables the radius filter
+  lat: latitudeSchema.optional(),
+  lng: longitudeSchema.optional(),
+  radius: z.coerce.number().positive().max(100_000).optional(),
+  status: z.enum(['all', 'thirsty', 'healthy']).default('all'),
+  mine: z.enum(['true', 'false']).optional(),
+  search: z.string().trim().max(200).optional(),
+  sort: z.enum(['nearest', 'newest', 'oldest', 'thirsty']).optional(),
+});
+
+/** Metres from (lat, lng) to each tree, worked out in the database (haversine). */
+const distanceFrom = (lat: number, lng: number) =>
+  sql<number>`(6371000 * 2 * asin(sqrt(
+    power(sin(radians(${trees.latitude} - ${lat}::double precision) / 2), 2) +
+    cos(radians(${lat}::double precision)) * cos(radians(${trees.latitude})) *
+    power(sin(radians(${trees.longitude} - ${lng}::double precision) / 2), 2)
+  )))`;
+
+/**
+ * GET /trees/browse: one page of trees.
+ * Filters: status (needs water / healthy), radius around lat/lng, mine (signed in), search
+ * (name, kind or address). Sorted nearest first when lat/lng are given, otherwise newest planted.
+ * With mine=true it also returns `summary` (how many of your trees there are, and how many need water).
+ */
+export const browseTrees = async (req: Request, res: Response) => {
+  const parsed = browseQuery.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: 'Invalid filters' });
+  }
+  const { page, limit, lat, lng, radius, status, mine, search } = parsed.data;
+  const here = lat !== undefined && lng !== undefined;
+  const sort = parsed.data.sort ?? (here ? 'nearest' : 'newest');
+
+  let userId: string | null = null;
+  if (mine === 'true') {
+    userId = getAuth(req).userId ?? null;
+    if (!userId) return res.status(401).json({ success: false, error: 'Sign in to see your trees' });
+  }
+
+  try {
+    const distance = here ? distanceFrom(lat, lng) : null;
+    const thirstyBefore = new Date(Date.now() - THIRSTY_AFTER_MS);
+    const isThirsty = or(isNull(trees.lastWateredAt), lt(trees.lastWateredAt, thirstyBefore))!;
+
+    const base: SQL[] = [];
+    if (userId) base.push(eq(trees.userId, userId));
+    if (search) base.push(or(ilike(trees.name, likePattern(search)), ilike(trees.species, likePattern(search)), ilike(trees.address, likePattern(search)))!);
+    if (distance && radius) base.push(sql`${distance} <= ${radius}`);
+
+    const filters = [...base];
+    if (status === 'thirsty') filters.push(isThirsty);
+    if (status === 'healthy') filters.push(gte(trees.lastWateredAt, thirstyBefore));
+    const where = filters.length ? and(...filters) : undefined;
+
+    const order =
+      sort === 'nearest' && distance
+        ? [asc(distance)]
+        : sort === 'thirsty'
+          ? [sql`${trees.lastWateredAt} asc nulls first`]
+          : sort === 'oldest'
+            ? [asc(trees.plantedAt)]
+            : [desc(trees.plantedAt)];
+
+    const [rows, [{ count }], summary] = await Promise.all([
+      db
+        .select({ tree: trees, ownerName: users.name, ownerAvatar: users.avatarUrl, ...(distance ? { distance } : {}) })
+        .from(trees)
+        .leftJoin(users, eq(users.id, trees.userId))
+        .where(where)
+        .orderBy(...order, desc(trees.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit),
+      db.select({ count: sql<number>`count(*)` }).from(trees).where(where),
+      // Your totals ignore the status filter, so the stat tiles stay the same while you switch it
+      userId
+        ? db
+            .select({ total: sql<number>`count(*)`, thirsty: sql<number>`count(*) filter (where ${isThirsty})` })
+            .from(trees)
+            .where(eq(trees.userId, userId))
+        : Promise.resolve(null),
+    ]);
+
+    const total = Number(count);
+    res.status(200).json({
+      success: true,
+      data: rows.map((r) => ({
+        ...r.tree,
+        owner: { id: r.tree.userId, name: r.ownerName, avatarUrl: r.ownerAvatar },
+        ...('distance' in r ? { distance: Math.round(Number(r.distance)) } : {}),
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      ...(summary ? { summary: { total: Number(summary[0].total), thirsty: Number(summary[0].thirsty) } } : {}),
+    });
+  } catch (error) {
+    console.error('Error browsing trees:', error);
+    res.status(500).json({ success: false, error: 'Failed to load trees' });
   }
 };

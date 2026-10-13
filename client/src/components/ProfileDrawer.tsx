@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
 import { CalendarDays, ChevronRight, LogOut, Monitor, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
@@ -76,12 +77,15 @@ export const ProfileDrawer: React.FC<{
         aria-label={isSignedIn ? 'Your profile' : 'Profile and sign in'}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="grid size-14 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-card text-foreground shadow-float hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="grid size-12 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-card md:size-14 text-foreground shadow-float hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {isSignedIn && user?.imageUrl ? <img src={user.imageUrl} alt="" className="size-full object-cover" /> : <UserRound className="size-6" />}
       </button>
 
-      {open && (
+      {/* Rendered into <body>: inside the floating top bar it would be stuck at the bar's layer,
+          underneath the bottom sheet, whatever its own z-index */}
+      {open &&
+        createPortal(
         <div className="fixed inset-0 z-[1300]">
           <div className="absolute inset-0 bg-black/35 animate-[pt-fade_200ms_ease-out]" onClick={() => setOpen(false)} aria-hidden="true" />
           <div
@@ -127,7 +131,7 @@ export const ProfileDrawer: React.FC<{
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
                   <NavRow icon={<CalendarDays />} label="Planting drives" hint="Upcoming drives and the full history" onClick={go(onDrives)} />
                   <NavRow icon={<UserRound />} label="Account" hint="Name, photo and password" onClick={go(onAccount)} />
-                  {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="People, trees and scheduling drives" onClick={go(onAdmin)} />}
+                  {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
                 </nav>
               </>
             ) : (
@@ -164,8 +168,9 @@ export const ProfileDrawer: React.FC<{
               </button>
             )}
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 };

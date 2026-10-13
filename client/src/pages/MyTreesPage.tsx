@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Droplets, Plus, Search } from 'lucide-react';
 import type { LatLng, Tree } from '../types';
-import { logCareActivity } from '../services/api';
-import { STATUS_LABEL, isDemoTree, timeAgo, treeStatus } from '../lib/trees';
-import { formatDistance, getDistanceInMeters } from '../utils/geo';
+import { browseTrees, logCareActivity, type Paged, type TreeSort } from '../services/api';
+import { STATUS_LABEL, timeAgo, treeStatus } from '../lib/trees';
+import { formatAgeShort, treeAge } from '../lib/age';
+import { formatDistance } from '../utils/geo';
+import { cn } from '../lib/cn';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -11,8 +13,12 @@ import { Chips } from '../components/ui/chips';
 import { Alert } from '../components/ui/alert';
 import { Sapling } from '../components/ui/logo';
 import { Spinner } from '../components/ui/spinner';
+import { Pager } from '../components/ui/pager';
 
 type Sort = 'NEWEST' | 'THIRSTY' | 'NEAREST';
+
+const PAGE_SIZE = 10;
+const SORT_PARAM: Record<Sort, TreeSort> = { NEWEST: 'newest', THIRSTY: 'thirsty', NEAREST: 'nearest' };
 
 /** Big number and a label, for the stats row. */
 export const Stat: React.FC<{ value: React.ReactNode; label: string; tone?: 'thirsty' }> = ({ value, label, tone }) => (
@@ -22,32 +28,61 @@ export const Stat: React.FC<{ value: React.ReactNode; label: string; tone?: 'thi
   </div>
 );
 
+/**
+ * The trees you planted, 10 at a time from the server: search, sort (newest, needs water first,
+ * nearest) and page through them, and water any of them in one tap.
+ */
 export const MyTreesPage: React.FC<{
-  trees: Tree[];
-  userId: string | null;
   you: LatLng | null;
   onClose: () => void;
   onShowOnMap: (tree: Tree) => void;
   onPlant: () => void;
   onChanged: () => void;
-}> = ({ trees, userId, you, onClose, onShowOnMap, onPlant, onChanged }) => {
+}> = ({ you, onClose, onShowOnMap, onPlant, onChanged }) => {
   const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
   const [sort, setSort] = useState<Sort>('NEWEST');
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<(Paged<Tree & { distance?: number }> & { summary?: { total: number; thirsty: number } }) | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
   const [watering, setWatering] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
 
-  const mine = trees.filter((t) => userId && !isDemoTree(t) && (t.userId === userId || t.owner?.id === userId));
-  const thirsty = mine.filter((t) => treeStatus(t) === 'thirsty').length;
-  const q = query.trim().toLowerCase();
-  const distance = (t: Tree) => (you ? getDistanceInMeters(you.lat, you.lng, t.latitude, t.longitude) : 0);
+  // Wait until typing pauses before searching; a new search or sort starts from page 1
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearch(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+  useEffect(() => setPage(1), [search, sort]);
 
-  const shown = mine
-    .filter((t) => !q || t.name.toLowerCase().includes(q) || t.species.toLowerCase().includes(q) || t.address?.toLowerCase().includes(q))
-    .sort((a, b) => {
-      if (sort === 'THIRSTY') return new Date(a.lastWateredAt ?? 0).getTime() - new Date(b.lastWateredAt ?? 0).getTime();
-      if (sort === 'NEAREST') return distance(a) - distance(b);
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+  const area = you ? `${you.lat.toFixed(3)},${you.lng.toFixed(3)}` : '';
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    browseTrees({ page, limit: PAGE_SIZE, mine: true, search, sort: SORT_PARAM[sort], near: you }).then(
+      (res) => {
+        if (cancelled) return;
+        setResult(res);
+        setFailed(false);
+        setLoading(false);
+      },
+      () => {
+        if (cancelled) return;
+        setFailed(true);
+        setLoading(false);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+    // `you` is represented by `area`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search, sort, area, version]);
+
+  const planted = result?.summary?.total ?? 0;
+  const thirsty = result?.summary?.thirsty ?? 0;
 
   const water = async (tree: Tree) => {
     setWatering(tree.id);
@@ -57,6 +92,7 @@ export const MyTreesPage: React.FC<{
       form.append('actionType', 'WATERED');
       await logCareActivity(tree.id, form);
       setNotice({ tone: 'success', text: `${tree.name} watered.` });
+      setVersion((v) => v + 1);
       onChanged();
     } catch {
       setNotice({ tone: 'error', text: `Couldn't log watering for ${tree.name}. Try again.` });
@@ -82,11 +118,15 @@ export const MyTreesPage: React.FC<{
       }
     >
       <div className="grid grid-cols-2 gap-3">
-        <Stat value={mine.length} label={mine.length === 1 ? 'tree planted' : 'trees planted'} />
+        <Stat value={result ? planted : '–'} label={planted === 1 ? 'tree planted' : 'trees planted'} />
         <Stat value={thirsty} label="need water" tone={thirsty ? 'thirsty' : undefined} />
       </div>
 
-      {mine.length === 0 ? (
+      {failed ? (
+        <Alert tone="error">Couldn't load your trees. Check your connection and try again.</Alert>
+      ) : !result ? (
+        <Spinner label="Loading your trees" />
+      ) : planted === 0 ? (
         <div className="flex flex-col items-center gap-4 py-10 text-center">
           <Sapling className="h-28" />
           <h2 className="text-2xl">Your grove starts here</h2>
@@ -112,11 +152,11 @@ export const MyTreesPage: React.FC<{
 
           {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
 
-          {shown.length === 0 ? (
-            <p className="py-4 text-center text-muted-foreground">None of your trees match "{query.trim()}".</p>
+          {result.data.length === 0 ? (
+            <p className="py-4 text-center text-muted-foreground">None of your trees match "{search}".</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-border">
-              {shown.map((t) => {
+            <ul className={cn('flex flex-col divide-y divide-border transition-opacity', loading && 'opacity-60')} aria-busy={loading}>
+              {result.data.map((t) => {
                 const status = treeStatus(t);
                 return (
                   <li key={t.id} className="flex items-center gap-4 py-4">
@@ -126,8 +166,9 @@ export const MyTreesPage: React.FC<{
                         <span className="block truncate text-lg font-medium">{t.name}</span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                           <Badge variant={status}>{STATUS_LABEL[status]}</Badge>
-                          {t.lastWateredAt ? `Watered ${timeAgo(t.lastWateredAt)}` : 'Never watered'}
-                          {you && ` · ${formatDistance(distance(t))}`}
+                          {formatAgeShort(treeAge(new Date(t.plantedAt)))} old ·{' '}
+                          {t.lastWateredAt ? `watered ${timeAgo(t.lastWateredAt)}` : 'never watered'}
+                          {t.distance !== undefined && ` · ${formatDistance(t.distance)}`}
                         </span>
                       </span>
                     </button>
@@ -140,6 +181,15 @@ export const MyTreesPage: React.FC<{
               })}
             </ul>
           )}
+          <Pager
+            page={result.page}
+            totalPages={result.totalPages}
+            onPage={setPage}
+            alwaysShow
+            total={result.total}
+            pageSize={PAGE_SIZE}
+            noun={result.total === 1 ? 'tree' : 'trees'}
+          />
         </>
       )}
     </Page>

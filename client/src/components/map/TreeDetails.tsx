@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { SignInButton, useUser } from '@clerk/react';
-import { Camera, Droplets, Navigation, Pencil, Radio, Scissors, Search, Sprout, Trash2, X } from 'lucide-react';
-import type { CareLog, LatLng, Tree } from '../../types';
-import { deleteTree, fetchCareHistory, logCareActivity } from '../../services/api';
+import { Camera, Droplets, Navigation, Pencil, Radio, Trash2, X } from 'lucide-react';
+import type { LatLng, Tree } from '../../types';
+import { deleteTree, logCareActivity } from '../../services/api';
 import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, isDemoTree, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { Badge } from '../ui/badge';
@@ -13,13 +13,8 @@ import { Textarea } from '../ui/field';
 import { Alert } from '../ui/alert';
 import { Spinner } from '../ui/spinner';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { CareSummary, CareTimeline, TreeAge, useCareHistory } from '../TreeLife';
 
-const CARE_ICON: Record<CareAction, React.ReactNode> = {
-  WATERED: <Droplets className="text-water" aria-hidden="true" />,
-  FERTILIZED: <Sprout className="text-leaf" aria-hidden="true" />,
-  PRUNED: <Scissors className="text-bark" aria-hidden="true" />,
-  INSPECTED: <Search className="text-muted-foreground" aria-hidden="true" />,
-};
 
 type Outcome = { tone: 'success' | 'error'; text: string } | null;
 
@@ -111,7 +106,6 @@ export const TreeDetails: React.FC<{
   onDeleted: () => void;
 }> = ({ tree, you, onClose, onDirections, onWalkLive, onEdit, onChanged, onDeleted }) => {
   const { user, isSignedIn } = useUser();
-  const [history, setHistory] = useState<CareLog[] | null>(null);
   const [caring, setCaring] = useState(false);
   const [watering, setWatering] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
@@ -125,29 +119,21 @@ export const TreeDetails: React.FC<{
   const meters = you ? getDistanceInMeters(you.lat, you.lng, tree.latitude, tree.longitude) : null;
   const isOwner = Boolean(isSignedIn && user && (user.id === tree.userId || user.id === tree.owner?.id));
 
-  const loadHistory = () => {
-    if (demo) {
-      setHistory([]);
-      return;
-    }
-    fetchCareHistory(tree.id).then(setHistory, () => setHistory([]));
-  };
+  // Care history from the server, 10 entries at a time (sample trees have none)
+  const care = useCareHistory(demo ? null : tree.id);
+  const history = care.items;
 
   useEffect(() => {
-    setHistory(null);
     setCaring(false);
     setOutcome(null);
     topRef.current?.scrollIntoView({ block: 'start' });
-    loadHistory();
-    // Reload when a different tree is selected
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree.id]);
 
   const careDone = (result: Outcome) => {
     setOutcome(result);
     if (result?.tone === 'success') {
       setCaring(false);
-      loadHistory();
+      care.reload();
       onChanged();
     }
   };
@@ -245,6 +231,11 @@ export const TreeDetails: React.FC<{
 
       {caring && <CareForm tree={tree} onDone={careDone} onCancel={() => setCaring(false)} />}
 
+      {/* Its age, counted from planting like a birthday */}
+      <TreeAge plantedAt={tree.plantedAt} />
+
+      <CareSummary tree={tree} history={history} />
+
       <HealthMeter score={tree.healthScore} />
 
       {tree.description && <ExpandableText text={tree.description} />}
@@ -258,7 +249,7 @@ export const TreeDetails: React.FC<{
         <div className="min-w-0">
           <p className="truncate font-medium">Planted by {tree.owner?.name || 'a neighbour'}</p>
           <p className="text-sm text-muted-foreground">
-            {timeAgo(tree.createdAt)}
+            Added to the map {timeAgo(tree.createdAt)}
             {tree.address ? ` · ${tree.address}` : ''}
           </p>
         </div>
@@ -276,34 +267,16 @@ export const TreeDetails: React.FC<{
       )}
 
       <section className="flex flex-col gap-3" aria-labelledby="care-history">
-        <h3 id="care-history" className="text-lg">Care history</h3>
+        <h3 id="care-history" className="text-lg">
+          Care history
+          {care.total > 0 && <span className="ml-2 font-sans text-base font-normal text-muted-foreground">{care.total}</span>}
+        </h3>
         {history === null ? (
           <Spinner label="Loading care history" />
         ) : history.length === 0 ? (
           <p className="text-muted-foreground">{demo ? 'Sample trees have no history.' : 'No care logged yet. Be the first to water it.'}</p>
         ) : (
-          <ol className="flex flex-col">
-            {history.map((log, i) => (
-              <li key={log.id} className="relative flex gap-3 pb-5 last:pb-0">
-                {/* The line linking entries, like rings in a trunk */}
-                {i < history.length - 1 && <span className="absolute top-9 bottom-0 left-[17px] w-0.5 bg-border" aria-hidden="true" />}
-                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-secondary [&>svg]:size-4">
-                  {CARE_ICON[log.actionType] ?? CARE_ICON.INSPECTED}
-                </span>
-                <div className="min-w-0 flex-1 pt-1.5">
-                  <p className="font-medium">
-                    {CARE_LABEL[log.actionType] ?? log.actionType}
-                    <span className="font-normal text-muted-foreground"> · {timeAgo(log.performedAt)}</span>
-                  </p>
-                  <p className="text-sm text-muted-foreground">by {log.performer?.name || 'a neighbour'}</p>
-                  {log.notes && <p className="mt-1">{log.notes}</p>}
-                  {log.photoUrl && log.photoUrl !== tree.photoUrl && (
-                    <img src={log.photoUrl} alt="Care update" className="mt-2 h-32 w-full rounded-xl object-cover" loading="lazy" />
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
+          <CareTimeline history={history} total={care.total} onLoadMore={care.loadMore} loadingMore={care.loadingMore} treePhotoUrl={tree.photoUrl} />
         )}
       </section>
 

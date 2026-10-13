@@ -7,6 +7,7 @@ import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
+import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
 
 export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: () => void }> = ({ tree, onClose, onSaved }) => {
   const [photo, setPhoto] = useState<File | null>(null);
@@ -15,10 +16,21 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
   const [address, setAddress] = useState(tree.address || '');
   const [description, setDescription] = useState(tree.description || '');
   const [health, setHealth] = useState(tree.healthScore);
+  const [plantedDate, setPlantedDate] = useState(() => toLocalParts(new Date(tree.plantedAt)).date);
+  const [plantedTime, setPlantedTime] = useState(() => toLocalParts(new Date(tree.plantedAt)).time);
+  const plantedAt = fromLocalParts(plantedDate, plantedTime);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const blocker = !name.trim() ? 'Give it a name to save' : !species.trim() ? 'Say what kind of tree it is' : null;
+  const blocker = !name.trim()
+    ? 'Give it a name to save'
+    : !species.trim()
+      ? 'Say what kind of tree it is'
+      : !plantedAt
+        ? 'Choose when it was planted'
+        : plantedAt.getTime() > Date.now() + 5 * 60 * 1000
+          ? "Planting time can't be in the future"
+          : null;
 
   const submit = async () => {
     if (blocker) return;
@@ -31,6 +43,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       form.append('address', address.trim());
       form.append('description', description.trim());
       form.append('healthScore', String(health));
+      if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
       if (photo) form.append('photo', photo);
       await updateTree(tree.id, form);
       onSaved();
@@ -65,6 +78,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       <Field label="Address or landmark" htmlFor="edit-address">
         <Input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
       </Field>
+      <PlantedAtField date={plantedDate} time={plantedTime} onDate={setPlantedDate} onTime={setPlantedTime} />
       <Field label={`Health: ${health}%`} htmlFor="edit-health" description="How the tree looks today: leaves, bark, new growth.">
         <input
           id="edit-health"

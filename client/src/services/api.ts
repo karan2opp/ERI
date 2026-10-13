@@ -74,9 +74,50 @@ export const logCareActivity = async (treeId: string, formData: FormData): Promi
   return res.data.data;
 };
 
-export const fetchCareHistory = async (treeId: string): Promise<CareLog[]> => {
-  const res = await api.get(`/trees/${treeId}/care`);
-  return res.data.data;
+export interface Paged<T> {
+  data: T[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+/** One page of a tree's care history, newest first. */
+export const fetchCareHistory = async (treeId: string, page = 1, limit = 10): Promise<Paged<CareLog>> => {
+  const res = await api.get(`/trees/${treeId}/care`, { params: { page, limit } });
+  return res.data;
+};
+
+export type TreeStatusFilter = 'all' | 'thirsty' | 'healthy';
+export type TreeSort = 'nearest' | 'newest' | 'oldest' | 'thirsty';
+
+/**
+ * One page of trees from the server: nearest first when `near` is given (each with `distance` in
+ * metres), filtered by status, radius, search and (signed in) your own trees. With `mine`, also
+ * returns `summary` counts for your trees.
+ */
+export const browseTrees = async (params: {
+  page: number;
+  limit?: number;
+  near?: { lat: number; lng: number } | null;
+  radius?: number | null;
+  status?: TreeStatusFilter;
+  mine?: boolean;
+  search?: string;
+  sort?: TreeSort;
+}): Promise<Paged<Tree & { distance?: number }> & { summary?: { total: number; thirsty: number } }> => {
+  const res = await api.get('/trees/browse', {
+    params: {
+      page: params.page,
+      limit: params.limit ?? 10,
+      ...(params.near ? { lat: params.near.lat, lng: params.near.lng } : {}),
+      ...(params.near && params.radius ? { radius: params.radius } : {}),
+      status: params.status ?? 'all',
+      ...(params.mine ? { mine: 'true' } : {}),
+      ...(params.search ? { search: params.search } : {}),
+      ...(params.sort ? { sort: params.sort } : {}),
+    },
+  });
+  return res.data;
 };
 
 // Admin APIs
@@ -90,8 +131,39 @@ export const fetchAdminUsers = async (page: number = 1, limit: number = 10, sear
   return res.data;
 };
 
-export const fetchAdminTrees = async (page: number = 1, limit: number = 10, search: string = '') => {
-  const res = await api.get(`/admin/trees?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`);
+export type TreeDateField = 'planted' | 'watered' | 'cared';
+
+/**
+ * Admin tree search: name/kind/address text, a date range (from the start of `from` to the end of
+ * `to`, in the admin's own time zone) on when trees were planted, last watered or last cared for,
+ * and needs-water/healthy.
+ */
+export const fetchAdminTrees = async (params: {
+  page: number;
+  limit?: number;
+  search?: string;
+  dateField?: TreeDateField;
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  status?: 'all' | 'thirsty' | 'healthy';
+}): Promise<{ data: Tree[]; total: number; page: number; totalPages: number }> => {
+  const startOf = (day: string) => new Date(`${day}T00:00`).toISOString();
+  const endOf = (day: string) => {
+    const d = new Date(`${day}T00:00`);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString();
+  };
+  const res = await api.get('/admin/trees', {
+    params: {
+      page: params.page,
+      limit: params.limit ?? 10,
+      ...(params.search ? { search: params.search } : {}),
+      dateField: params.dateField ?? 'planted',
+      ...(params.from ? { from: startOf(params.from) } : {}),
+      ...(params.to ? { to: endOf(params.to) } : {}),
+      status: params.status ?? 'all',
+    },
+  });
   return res.data;
 };
 
