@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-ssr/
+*.log
+
+# Secrets — commit only the .env.example files
+.env
+.env.*
+!.env.example
+
+# Local uploads and editor files
+server/uploads/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store

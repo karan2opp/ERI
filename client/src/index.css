@@ -1,0 +1,370 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Theme: <html data-theme="light|dark"> is set before first paint by the script in index.html. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Earth Revival Initiative tokens: white base, the logo's greens. The layout follows a map-first, phone-first system
+ * (floating pills over a full-screen map, a bottom sheet, one clear action per screen).
+ * Colour carries meaning:
+ *   primary  globe green  main actions, selected chips (white text on it)
+ *   leaf     leaf green   healthy trees, success, the walking route
+ *   thirsty  water blue   trees that need water (shown with a water-drop icon)
+ *   warning  amber        low health
+ *   water    river blue   water/care actions, live walkers
+ *   bark     brown        planting drives
+ *   destructive rust      delete, end, errors
+ */
+:root {
+  color-scheme: light;
+  /* Greens measured from the Earth Revival Initiative logo:
+     #133c16 "EARTH" lettering · #2c691c globe · #518321 leaves · #729537 "REVIVAL" · #d2e7c8 highlight */
+  --background: #ffffff;
+  --foreground: #133c16;
+  --card: #ffffff;
+  --card-foreground: #133c16;
+  --primary: #2c691c;
+  --primary-foreground: #ffffff;
+  --secondary: #e9f2e1;
+  --secondary-foreground: #133c16;
+  --muted: #f5f9f1;
+  --muted-foreground: #5b6b55;
+  --accent: #d2e7c8;
+  --border: #e2ebdb;
+  --input: #f0f6ea;
+  --ring: #2c691c;
+  --destructive: #c63d21;
+  --leaf: #518321;
+  --sprout: #729537;
+  --thirsty: #2f7fb8;
+  --thirsty-foreground: #ffffff;
+  --warning: #e09a1c;
+  --water: #2f7fb8;
+  --bark: #7a5638;
+  --map: #eef2ea;
+  --elev-float: 0 2px 8px rgb(19 60 22 / 0.14);
+  --elev-sheet: 0 4px 16px rgb(19 60 22 / 0.14);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0c1510;
+  --foreground: #eaf0e3;
+  --card: #142019;
+  --card-foreground: #eaf0e3;
+  --primary: #8fbf5a;
+  --primary-foreground: #0c1f0e;
+  --secondary: #1f2e25;
+  --secondary-foreground: #eaf0e3;
+  --muted: #18251d;
+  --muted-foreground: #9dae9f;
+  --accent: #29392f;
+  --border: #25362b;
+  --input: #1f2e25;
+  --ring: #8fbf5a;
+  --destructive: #f0714f;
+  --leaf: #8fbf5a;
+  --sprout: #a9c97a;
+  --thirsty: #6ab0e3;
+  --warning: #f0b13e;
+  --water: #6ab0e3;
+  --bark: #c49a6c;
+  --map: #17231c;
+  --elev-float: 0 2px 8px rgb(0 0 0 / 0.6);
+  --elev-sheet: 0 4px 16px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  /* Montserrat echoes the heavy geometric "EARTH" lettering in the logo; DM Sans keeps body text friendly and easy to read */
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-leaf: var(--leaf);
+  --color-sprout: var(--sprout);
+  --color-thirsty: var(--thirsty);
+  --color-thirsty-foreground: var(--thirsty-foreground);
+  --color-warning: var(--warning);
+  --color-water: var(--water);
+  --color-bark: var(--bark);
+  --color-map: var(--map);
+
+  --shadow-float: var(--elev-float);
+  --shadow-sheet: var(--elev-sheet);
+
+  --spacing-100: 25rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+  }
+  /* Headings: bold geometric sans, sentence case */
+  h1, h2, h3 {
+    @apply font-heading font-bold;
+    letter-spacing: -0.02em;
+  }
+  /* 16px inputs stop iOS from zooming in on focus */
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Safe areas for notched phones (viewport-fit=cover) */
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top), 1rem);
+}
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+}
+@utility top-safe {
+  top: max(env(safe-area-inset-top), 1rem);
+}
+
+/* ---------- Leaflet ---------- */
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: var(--map);
+  font-family: inherit;
+}
+
+/* Dark mode: dim the raster tiles to sit with the pine-night UI */
+[data-theme="dark"] .leaflet-tile-pane {
+  filter: brightness(0.92) saturate(0.85);
+}
+/* Tiles without a dark style (OpenStreetMap): invert them into a night map */
+[data-theme="dark"] .pt-tiles-invert .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6);
+}
+
+.leaflet-control-attribution {
+  background: color-mix(in oklch, var(--card) 80%, transparent) !important;
+  color: var(--muted-foreground) !important;
+  font-size: 10px;
+  border-radius: 999px 0 0 0;
+  padding: 0 8px !important;
+}
+.leaflet-control-attribution a {
+  color: inherit !important;
+}
+
+/* Marker roots must stay unstyled: Leaflet positions them with transform. Styling lives on .pt-pin. */
+.pt-marker {
+  background: none;
+  border: 0;
+}
+
+.pt-pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 3px solid var(--background);
+  box-shadow: var(--elev-float);
+  color: #fff;
+  transition: transform 150ms ease;
+  cursor: pointer;
+}
+.pt-pin[data-status="healthy"] { background: var(--leaf); }
+.pt-pin[data-status="drive"] { background: var(--bark); }
+.pt-pin[data-selected="true"] {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 2px var(--foreground), var(--elev-float);
+}
+
+/* Trees that need water: the pin is a blue water drop with the tree inside */
+.pt-droppin {
+  display: block;
+  width: 40px;
+  height: 46px;
+  cursor: pointer;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.25));
+  transform-origin: 50% 65%;
+  transition: transform 150ms ease;
+}
+.pt-droppin .pt-drop-body {
+  fill: var(--thirsty);
+  stroke: var(--background);
+  stroke-width: 1.5;
+}
+.pt-droppin[data-selected="true"] {
+  transform: scale(1.2);
+}
+.pt-droppin[data-selected="true"] .pt-drop-body {
+  stroke: var(--foreground);
+}
+
+/* You: a dark green dot with a soft halo */
+.pt-you {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.pt-you::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 15%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pt-you::before { animation: pt-halo 2s ease-out infinite; }
+}
+.pt-you span {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--foreground);
+  border: 3px solid var(--background);
+  box-shadow: var(--elev-float);
+}
+
+/* Someone walking live */
+.pt-walker {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--water);
+  border: 3px solid var(--background);
+  box-shadow: var(--elev-float);
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+@keyframes pt-halo {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@keyframes pt-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@utility animate-rise {
+  animation: pt-rise 200ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Page-load intro (IntroAnimation.tsx) ---------- */
+
+/* Each tree pivots at its trunk base, in its bottom outer corner. --dir flips the motion for the right tree. */
+.eri-tree {
+  position: absolute;
+  will-change: transform;
+}
+/* Position and pivot (the trunk base) are set inline, from the generated tree's size */
+.eri-tree[data-side="left"] { --dir: 1; }
+.eri-tree[data-side="right"] { --dir: -1; }
+
+/* A gust: quick jerks that die away, the two trees slightly out of step */
+.eri-tree[data-phase="shake"],
+.eri-tree[data-phase="drop"] {
+  animation: eri-gust 1100ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+.eri-tree[data-side="right"][data-phase="shake"],
+.eri-tree[data-side="right"][data-phase="drop"] {
+  animation-delay: 90ms;
+}
+
+/* The backdrop behind the photo trees fades as they swing away */
+.eri-backdrop {
+  transition: opacity 700ms ease 150ms;
+}
+.eri-backdrop[data-phase="open"] {
+  opacity: 0;
+}
+
+/* Opening: a small lean inward, then each tree swings out and away to its own side */
+.eri-tree[data-phase="open"] {
+  animation: eri-swing-open 1500ms cubic-bezier(0.65, 0, 0.3, 1) both;
+}
+
+@keyframes eri-gust {
+  0% { transform: rotate(0deg); }
+  12% { transform: rotate(calc(var(--dir) * 1.6deg)); }
+  26% { transform: rotate(calc(var(--dir) * -1.2deg)); }
+  42% { transform: rotate(calc(var(--dir) * 0.9deg)); }
+  58% { transform: rotate(calc(var(--dir) * -0.55deg)); }
+  76% { transform: rotate(calc(var(--dir) * 0.25deg)); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes eri-swing-open {
+  0% { transform: rotate(0deg) translateX(0); }
+  16% { transform: rotate(calc(var(--dir) * 1.8deg)) translateX(0); }
+  100% { transform: rotate(calc(var(--dir) * -30deg)) translateX(calc(var(--dir) * -62%)); }
+}
+
+/* Loose leaves sit in the canopy until the drop, then fall, drift and spin to the ground */
+.eri-fall {
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 4px 3px rgb(0 0 0 / 0.35));
+}
+.eri-fall[data-phase="drop"],
+.eri-fall[data-phase="open"] {
+  animation-name: eri-leaf-fall;
+  animation-timing-function: cubic-bezier(0.4, 0.1, 0.6, 1);
+  animation-fill-mode: forwards;
+}
+.eri-fall[data-phase="drop"] .eri-flutter,
+.eri-fall[data-phase="open"] .eri-flutter {
+  animation: eri-flutter 700ms ease-in-out infinite alternate;
+}
+
+@keyframes eri-leaf-fall {
+  0% { transform: translate(-50%, -50%) rotate(0deg); opacity: 1; }
+  20% { transform: translate(calc(-50% + var(--dx) * 0.3), calc(-50% + 12vh)) rotate(calc(var(--rot) * 0.2)); }
+  45% { transform: translate(calc(-50% - var(--dx) * 0.2), calc(-50% + 34vh)) rotate(calc(var(--rot) * 0.45)); }
+  70% { transform: translate(calc(-50% + var(--dx) * 0.7), calc(-50% + 58vh)) rotate(calc(var(--rot) * 0.7)); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + 92vh)) rotate(var(--rot)); opacity: 0; }
+}
+
+/* Tumbling: the leaf tips over in 3D, the way real leaves rock as they fall */
+@keyframes eri-flutter {
+  from { transform: rotateX(0deg) rotateY(-25deg); }
+  to { transform: rotateX(65deg) rotateY(35deg); }
+}

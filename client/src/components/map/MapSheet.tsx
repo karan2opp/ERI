@@ -1,0 +1,68 @@
+import { useRef } from 'react';
+import { cn } from '../../lib/cn';
+
+export type SheetState = 'collapsed' | 'half' | 'full';
+
+const UP: Record<SheetState, SheetState> = { collapsed: 'half', half: 'full', full: 'full' };
+const DOWN: Record<SheetState, SheetState> = { collapsed: 'collapsed', half: 'collapsed', full: 'half' };
+// A tap on the handle toggles between closed and open
+const TAP: Record<SheetState, SheetState> = { collapsed: 'half', half: 'collapsed', full: 'half' };
+
+/**
+ * The map's bottom sheet on phones (drag or tap the handle: one line, 46% of the screen, or
+ * nearly full), and a full-height side panel on wider screens.
+ */
+export const MapSheet: React.FC<{
+  state: SheetState;
+  onStateChange: (state: SheetState) => void;
+  label: string;
+  header?: React.ReactNode;
+  /** Shown just above the sheet's top edge on phones (the map credit) */
+  above?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ state, onStateChange, label, header, above, children }) => {
+  const drag = useRef<number | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    drag.current = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (drag.current === null) return;
+    const dy = e.clientY - drag.current;
+    drag.current = null;
+    if (Math.abs(dy) < 8) onStateChange(TAP[state]);
+    else onStateChange(dy < 0 ? UP[state] : DOWN[state]);
+  };
+
+  return (
+    <section
+      aria-label={label}
+      data-state={state}
+      className={cn(
+        'group fixed inset-x-0 bottom-0 z-[1100] flex flex-col bg-card shadow-sheet',
+        'rounded-t-3xl transition-[max-height] duration-300 ease-out',
+        'max-md:data-[state=collapsed]:max-h-[calc(5.75rem+env(safe-area-inset-bottom))] max-md:data-[state=half]:max-h-[46dvh] max-md:data-[state=full]:max-h-[88dvh]',
+        'md:inset-x-auto md:top-4 md:bottom-4 md:left-4 md:w-100 md:rounded-2xl'
+      )}
+    >
+      {above && <div className="pointer-events-none absolute -top-8 left-4 md:hidden">{above}</div>}
+      <button
+        type="button"
+        aria-label={state === 'collapsed' ? `Show ${label.toLowerCase()}` : `Hide ${label.toLowerCase()}`}
+        aria-expanded={state !== 'collapsed'}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => (drag.current = null)}
+        className="flex h-7 w-full shrink-0 cursor-grab touch-none items-center justify-center rounded-t-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+      >
+        <span className="h-1.5 w-10 rounded-full bg-accent" />
+      </button>
+      {header && <div className="shrink-0 px-5 pt-1 md:pt-5">{header}</div>}
+      <div className="pb-safe min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-3 max-md:group-data-[state=collapsed]:overflow-hidden">
+        {children}
+      </div>
+    </section>
+  );
+};
