@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
 import { CheckCircle2, LocateFixed, Plus } from 'lucide-react';
 import type { Drive, LatLng, Tree } from './types';
-import { fetchAllTrees, setAuthTokenGetter, syncCurrentUser } from './services/api';
+import { fetchAllTrees, fetchGlobalDrives, setAuthTokenGetter, syncCurrentUser } from './services/api';
 import { reconnectSocket } from './utils/socket';
 import { getDistanceInMeters } from './utils/geo';
 import { treeStatus, isDemoTree } from './lib/trees';
 import { sampleTreesAround } from './lib/demo';
 import { useWalkingRoute } from './lib/route';
+import { isUpcoming, splitDrives } from './lib/drives';
 import { cn } from './lib/cn';
 import { useIsDark } from './lib/theme';
 import { useTileSource } from './lib/tiles';
@@ -19,7 +20,7 @@ import { TreeDetails } from './components/map/TreeDetails';
 import { DriveDetails } from './components/map/DriveDetails';
 import { NavigationCard, NavigationPanel } from './components/map/NavigationPanel';
 import { PickLocation } from './components/map/PickLocation';
-import { AccountMenu } from './components/AccountMenu';
+import { ProfileDrawer } from './components/ProfileDrawer';
 import { LiveTracker } from './components/LiveTracker';
 import { Button } from './components/ui/button';
 import { Chips } from './components/ui/chips';
@@ -31,11 +32,12 @@ import { EditTreePage } from './pages/EditTreePage';
 import { MyTreesPage } from './pages/MyTreesPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
+import { DrivesPage } from './pages/DrivesPage';
 import { SharedDrivePage } from './pages/SharedDrivePage';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
-type Screen = 'map' | 'plant' | 'pick' | 'edit' | 'myTrees' | 'account' | 'admin';
-type Selection = { kind: 'tree'; id: string } | { kind: 'drive' } | null;
+type Screen = 'map' | 'plant' | 'pick' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
+type Selection = { kind: 'tree' | 'drive'; id: string } | null;
 type Destination = { name: string; at: LatLng };
 
 // India, zoomed out, for a first visit before we know where you are
@@ -99,7 +101,8 @@ function MapApp() {
   const [query, setQuery] = useState('');
   const [sheet, setSheet] = useState<SheetState>('half');
   const [selection, setSelection] = useState<Selection>(null);
-  const [drive, setDrive] = useState<Drive | null>(null);
+  // Planting drives, shown to everyone (null while loading)
+  const [drives, setDrives] = useState<Drive[] | null>(null);
   const [editing, setEditing] = useState<Tree | null>(null);
 
   const [destination, setDestination] = useState<Destination | null>(null);
@@ -183,6 +186,18 @@ function MapApp() {
   }, []);
   useEffect(loadTrees, [loadTrees]);
 
+  // ---- Planting drives (reloaded whenever we come back to the map, e.g. after an admin schedules one) ----
+  const loadDrives = useCallback(() => {
+    // For the map pins and the drawer's count; failures just leave the last list in place
+    fetchGlobalDrives().then(
+      (res) => setDrives(res.success && Array.isArray(res.data) ? res.data : []),
+      () => {}
+    );
+  }, []);
+  useEffect(() => {
+    if (screen === 'map') loadDrives();
+  }, [screen, loadDrives]);
+
   // Sample trees only while the map would otherwise be empty
   const sampleCenter = you ?? start;
   const trees = useMemo<Tree[]>(() => {
@@ -205,6 +220,13 @@ function MapApp() {
   }, [trees, status, distance, you, userId]);
 
   const selectedTree = selection?.kind === 'tree' ? trees.find((t) => t.id === selection.id) ?? null : null;
+  const selectedDrive = selection?.kind === 'drive' ? drives?.find((d) => d.id === selection.id) ?? null : null;
+  // Pin upcoming drives (and a past one only while it's selected)
+  const drivePins = useMemo(
+    () => (drives ?? []).filter((d) => isUpcoming(d) || d.id === selectedDrive?.id),
+    [drives, selectedDrive?.id]
+  );
+  const upcomingDrives = useMemo(() => (drives ? splitDrives(drives).upcoming.length : 0), [drives]);
   const myTrees = useMemo(() => trees.filter((t) => userId && !isDemoTree(t) && (t.userId === userId || t.owner?.id === userId)), [trees, userId]);
 
   // ---- Selection and camera ----
@@ -215,8 +237,9 @@ function MapApp() {
   }, []);
 
   const showDrive = useCallback((d: Drive) => {
-    setDrive(d);
-    setSelection({ kind: 'drive' });
+    // Make sure it's in the list even if the drives haven't reloaded yet (e.g. just opened from Admin)
+    setDrives((list) => (list?.some((x) => x.id === d.id) ? list : [...(list ?? []), d]));
+    setSelection({ kind: 'drive', id: d.id });
     setSheet('half');
     if (d.latitude != null && d.longitude != null) setFlyTo({ lat: d.latitude, lng: d.longitude, zoom: 16, timestamp: Date.now() });
   }, []);
@@ -257,7 +280,7 @@ function MapApp() {
   };
 
   // ---- What the sheet shows ----
-  const liveRoom = walkLive?.room ?? (selectedTree && !isDemoTree(selectedTree) ? `plant_${selectedTree.id}` : selection?.kind === 'drive' && drive ? `drive_${drive.id}` : null);
+  const liveRoom = walkLive?.room ?? (selectedTree && !isDemoTree(selectedTree) ? `plant_${selectedTree.id}` : selectedDrive ? `drive_${selectedDrive.id}` : null);
   const picking = screen === 'pick';
   const navigating = Boolean(destination);
 
@@ -298,15 +321,16 @@ function MapApp() {
         }}
       />
     );
-  } else if (selection?.kind === 'drive' && drive) {
+  } else if (selectedDrive) {
+    const d = selectedDrive;
     sheetLabel = 'Planting drive';
     sheetBody = (
       <DriveDetails
-        drive={drive}
+        drive={d}
         you={you}
         onClose={clearSelection}
-        onDirections={() => drive.latitude != null && drive.longitude != null && startDirections(drive.title, { lat: drive.latitude, lng: drive.longitude })}
-        onWalkLive={() => setWalkLive({ room: `drive_${drive.id}`, name: drive.title })}
+        onDirections={() => d.latitude != null && d.longitude != null && startDirections(d.title, { lat: d.latitude, lng: d.longitude })}
+        onWalkLive={() => setWalkLive({ room: `drive_${d.id}`, name: d.title })}
       />
     );
   } else {
@@ -360,9 +384,9 @@ function MapApp() {
         trees={filtered}
         selectedTreeId={selectedTree?.id ?? null}
         onSelectTree={selectTree}
-        drive={drive}
-        driveSelected={selection?.kind === 'drive'}
-        onSelectDrive={() => drive && showDrive(drive)}
+        drives={drivePins}
+        selectedDriveId={selectedDrive?.id ?? null}
+        onSelectDrive={showDrive}
         userLocation={you}
         radiusMeters={distance === 'ALL' ? null : Number(distance)}
         route={destination ? route?.line ?? null : null}
@@ -396,7 +420,15 @@ function MapApp() {
                   <span className="min-[400px]:hidden">Plant</span>
                 </Button>
                 <div className="pointer-events-auto">
-                  <AccountMenu isAdmin={role === 'ADMIN'} onMyTrees={() => open('myTrees')} onAccount={() => open('account')} onAdmin={() => open('admin')} />
+                  <ProfileDrawer
+                    isAdmin={role === 'ADMIN'}
+                    treesPlanted={myTrees.length}
+                    upcomingDrives={upcomingDrives}
+                    onMyTrees={() => open('myTrees')}
+                    onDrives={() => open('drives')}
+                    onAccount={() => open('account')}
+                    onAdmin={() => open('admin')}
+                  />
                 </div>
               </div>
 
@@ -496,7 +528,18 @@ function MapApp() {
         />
       )}
 
-      {screen === 'account' && <ProfilePage role={role} myTrees={myTrees} onClose={back} />}
+      {screen === 'account' && <ProfilePage role={role} myTrees={myTrees} onClose={back} onProfileChanged={loadTrees} />}
+
+      {screen === 'drives' && (
+        <DrivesPage
+          you={you}
+          onClose={back}
+          onShowOnMap={(d) => {
+            back();
+            showDrive(d);
+          }}
+        />
+      )}
 
       {screen === 'admin' && (
         <AdminPage

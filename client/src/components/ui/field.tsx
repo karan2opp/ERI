@@ -10,10 +10,38 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
 );
 Input.displayName = 'Input';
 
+/**
+ * A text box that grows with what you type: it starts at `rows` lines, gets taller as you write,
+ * and only scrolls once it reaches 60% of the screen height.
+ */
 export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, rows = 3, ...props }, ref) => (
-    <textarea ref={ref} rows={rows} className={cn(inputBase, 'resize-none py-3 leading-relaxed', className)} {...props} />
-  )
+  ({ className, rows = 4, value, ...props }, ref) => {
+    const inner = React.useRef<HTMLTextAreaElement | null>(null);
+
+    const setRefs = (el: HTMLTextAreaElement | null) => {
+      inner.current = el;
+      if (typeof ref === 'function') ref(el);
+      else if (ref) ref.current = el;
+    };
+
+    // Fit the height to the text whenever it changes (including when it's filled in for editing)
+    React.useLayoutEffect(() => {
+      const el = inner.current;
+      if (!el) return;
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight + 2}px`;
+    }, [value]);
+
+    return (
+      <textarea
+        ref={setRefs}
+        rows={rows}
+        value={value}
+        className={cn(inputBase, 'max-h-[60vh] resize-none overflow-y-auto py-3 leading-relaxed', className)}
+        {...props}
+      />
+    );
+  }
 );
 Textarea.displayName = 'Textarea';
 

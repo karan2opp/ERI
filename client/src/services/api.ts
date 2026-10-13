@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Tree, CareLog, User } from '../types';
+import type { Tree, CareLog, User, Drive } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -127,3 +127,41 @@ export const geocodeAddressApi = async (query: string) => {
   return res.data;
 };
 
+
+export interface DrivesPageResult {
+  data: Drive[];
+  total: number;
+  page: number;
+  totalPages: number;
+  counts: { upcoming: number; past: number };
+}
+
+/** Local date as YYYY-MM-DD, so "upcoming" means from today where the person is. */
+export const localToday = () => new Date().toLocaleDateString('en-CA');
+
+/** One page of drives: title search, an exact date, and upcoming/past/all. */
+export const fetchDrivesPage = async (params: {
+  page: number;
+  limit?: number;
+  search?: string;
+  date?: string | null;
+  when: 'upcoming' | 'past' | 'all';
+}): Promise<DrivesPageResult> => {
+  const res = await api.get('/drives', {
+    params: {
+      page: params.page,
+      limit: params.limit ?? 10,
+      when: params.when,
+      today: localToday(),
+      ...(params.search ? { search: params.search } : {}),
+      ...(params.date ? { date: params.date } : {}),
+    },
+  });
+  return res.data;
+};
+
+/** Days in a month (YYYY-MM) that have drives, with how many. */
+export const fetchDriveCalendar = async (month: string): Promise<{ date: string; count: number }[]> => {
+  const res = await api.get('/drives/calendar', { params: { month } });
+  return res.data.data;
+};

@@ -368,3 +368,13 @@
   from { transform: rotateX(0deg) rotateY(-25deg); }
   to { transform: rotateX(65deg) rotateY(35deg); }
 }
+
+/* Profile drawer: slides in from the right over a fading backdrop */
+@keyframes pt-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes pt-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

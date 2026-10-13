@@ -31,11 +31,26 @@ export const formatDistance = (meters: number): string => {
   if (meters < 1000) {
     return `${Math.round(meters)} m`;
   }
-  return `${(meters / 1000).toFixed(1)} km`;
+  const km = meters / 1000;
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 };
 
 /** Walking minutes at about 80 m a minute (never less than 1). */
 export const walkMinutes = (meters: number): number => Math.max(1, Math.round(meters / 80));
+
+// Beyond this, a walking time isn't useful to show
+export const MAX_WALK_M = 5000;
+
+/** "4 min walk" for places within walking distance, otherwise null. */
+export const walkHint = (meters: number): string | null => (meters <= MAX_WALK_M ? `${walkMinutes(meters)} min walk` : null);
+
+/** "45 min", "2 h 10 min" */
+export const formatMinutes = (minutes: number): string => {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+};
 
 /**
  * Fetch human-readable address from coordinates (using Google Maps API backend proxy with OSM fallback)

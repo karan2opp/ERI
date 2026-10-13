@@ -4,6 +4,7 @@ import type { Drive } from '../types';
 import { getDriveById } from '../services/api';
 import { Logo, Sapling } from '../components/ui/logo';
 import { Badge } from '../components/ui/badge';
+import { ExpandableText } from '../components/ui/expandable-text';
 import { Button, buttonClass } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { MiniMap } from '../components/MiniMap';
@@ -94,7 +95,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
               </a>
             )}
 
-            <p className="text-lg leading-relaxed whitespace-pre-wrap">{drive.description}</p>
+            <ExpandableText text={drive.description} lines={6} className="text-lg" />
 
             {spot && <MiniMap center={spot} pin={spot} liveRoom={`drive_${drive.id}`} className="h-80" />}
 

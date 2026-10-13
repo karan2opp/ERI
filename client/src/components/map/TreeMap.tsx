@@ -130,9 +130,10 @@ export interface TreeMapProps {
   trees: Tree[];
   selectedTreeId: string | null;
   onSelectTree: (tree: Tree) => void;
-  drive: Drive | null;
-  onSelectDrive: () => void;
-  driveSelected: boolean;
+  /** Planting drives to pin (the upcoming ones, plus whichever is selected) */
+  drives: Drive[];
+  selectedDriveId: string | null;
+  onSelectDrive: (drive: Drive) => void;
   userLocation: LatLng | null;
   radiusMeters: number | null;
   route: [number, number][] | null;
@@ -151,9 +152,9 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   trees,
   selectedTreeId,
   onSelectTree,
-  drive,
+  drives,
+  selectedDriveId,
   onSelectDrive,
-  driveSelected,
   userLocation,
   radiusMeters,
   route,
@@ -201,15 +202,21 @@ export const TreeMap: React.FC<TreeMapProps> = ({
             />
           ))}
 
-        {!pickMode && drive?.latitude != null && drive.longitude != null && (
-          <Marker
-            position={[drive.latitude, drive.longitude]}
-            icon={pinIcon('drive', driveSelected, drive.title)}
-            zIndexOffset={400}
-            eventHandlers={{ click: onSelectDrive }}
-            title={drive.title}
-          />
-        )}
+        {!pickMode &&
+          drives.map(
+            (d) =>
+              d.latitude != null &&
+              d.longitude != null && (
+                <Marker
+                  key={d.id}
+                  position={[d.latitude, d.longitude]}
+                  icon={pinIcon('drive', d.id === selectedDriveId, d.title)}
+                  zIndexOffset={d.id === selectedDriveId ? 600 : 400}
+                  eventHandlers={{ click: () => onSelectDrive(d) }}
+                  title={d.title}
+                />
+              )
+          )}
 
         {liveRoom && <LiveMapOverlay room={liveRoom} />}
 

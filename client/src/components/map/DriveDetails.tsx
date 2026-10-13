@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { SignInButton, useUser } from '@clerk/react';
-import { Calendar, ExternalLink, Navigation, Radio, X } from 'lucide-react';
+import { Calendar, Check, ExternalLink, Navigation, Radio, Share2, X } from 'lucide-react';
 import type { Drive, LatLng } from '../../types';
-import { formatDistance, getDistanceInMeters, walkMinutes } from '../../utils/geo';
-import { driveMapsUrl, formatDriveDate } from '../../lib/drives';
+import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
+import { driveMapsUrl, formatDriveDate, isUpcoming, shareDrive } from '../../lib/drives';
 import { Badge } from '../ui/badge';
+import { ExpandableText } from '../ui/expandable-text';
 import { Button, buttonClass } from '../ui/button';
 
 /** A planting drive selected on the map. */
@@ -17,27 +19,42 @@ export const DriveDetails: React.FC<{
   const { isSignedIn } = useUser();
   const meters = you && drive.latitude != null && drive.longitude != null ? getDistanceInMeters(you.lat, you.lng, drive.latitude, drive.longitude) : null;
   const maps = driveMapsUrl(drive);
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    if (await shareDrive(drive)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5 pb-4">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <Badge variant="drive" className="self-start">Planting drive</Badge>
+          <div className="flex gap-1.5">
+            <Badge variant="drive">Planting drive</Badge>
+            {!isUpcoming(drive) && <Badge variant="outline">Past</Badge>}
+          </div>
           <h2 className="text-xl leading-tight">{drive.title}</h2>
           <p className="flex items-center gap-2 text-muted-foreground">
             <Calendar className="size-4 shrink-0" aria-hidden="true" /> {formatDriveDate(drive)}
           </p>
           {drive.address && <p className="text-muted-foreground">{drive.address}</p>}
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close drive details" className="-mt-1 -mr-2">
-          <X className="size-5!" />
-        </Button>
+        <div className="-mt-1 -mr-2 flex">
+          <Button variant="ghost" size="icon" onClick={share} aria-label={copied ? 'Link copied' : 'Share this drive'}>
+            {copied ? <Check className="size-5! text-leaf" /> : <Share2 className="size-5!" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close drive details">
+            <X className="size-5!" />
+          </Button>
+        </div>
       </div>
 
       {meters !== null && (
         <div className="flex items-baseline gap-2">
           <span className="font-heading text-4xl font-bold tabular-nums">{formatDistance(meters)}</span>
-          <span className="text-muted-foreground">{walkMinutes(meters)} min walk</span>
+          {walkHint(meters) && <span className="text-muted-foreground">{walkHint(meters)}</span>}
         </div>
       )}
 
@@ -65,7 +82,9 @@ export const DriveDetails: React.FC<{
         </div>
       </div>
 
-      <p className="leading-relaxed whitespace-pre-wrap">{drive.description}</p>
+      {copied && <p role="status" className="text-sm text-leaf">Link copied. Send it to anyone who wants to join.</p>}
+
+      <ExpandableText text={drive.description} />
     </div>
   );
 };

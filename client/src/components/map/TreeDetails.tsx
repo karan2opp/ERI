@@ -4,8 +4,9 @@ import { Camera, Droplets, Navigation, Pencil, Radio, Scissors, Search, Sprout, 
 import type { CareLog, LatLng, Tree } from '../../types';
 import { deleteTree, fetchCareHistory, logCareActivity } from '../../services/api';
 import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, isDemoTree, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
-import { formatDistance, getDistanceInMeters, walkMinutes } from '../../utils/geo';
+import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { Badge } from '../ui/badge';
+import { ExpandableText } from '../ui/expandable-text';
 import { Button } from '../ui/button';
 import { Chips } from '../ui/chips';
 import { Textarea } from '../ui/field';
@@ -216,7 +217,7 @@ export const TreeDetails: React.FC<{
       {meters !== null && (
         <div className="flex items-baseline gap-2">
           <span className="font-heading text-4xl font-bold tabular-nums">{formatDistance(meters)}</span>
-          <span className="text-muted-foreground">{walkMinutes(meters)} min walk</span>
+          {walkHint(meters) && <span className="text-muted-foreground">{walkHint(meters)}</span>}
         </div>
       )}
 
@@ -246,7 +247,7 @@ export const TreeDetails: React.FC<{
 
       <HealthMeter score={tree.healthScore} />
 
-      {tree.description && <p className="leading-relaxed">{tree.description}</p>}
+      {tree.description && <ExpandableText text={tree.description} />}
 
       <div className="flex items-center gap-3">
         <img

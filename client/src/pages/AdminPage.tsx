@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Calendar, Check, ChevronRight, Map as MapIcon, Plus, Search, Share2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import type { Drive, LatLng, Tree, User } from '../types';
-import { createGlobalDrive, fetchAdminStats, fetchAdminTrees, fetchAdminUsers, fetchGlobalDrives } from '../services/api';
+import { createGlobalDrive, fetchAdminStats, fetchAdminTrees, fetchAdminUsers } from '../services/api';
 import { geocodeLocation } from '../utils/geo';
 import { timeAgo } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
@@ -12,8 +12,9 @@ import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { MiniMap } from '../components/MiniMap';
-import { LiveTracker } from '../components/LiveTracker';
-import { formatDriveDate } from '../lib/drives';
+import { DriveView } from '../components/DriveView';
+import { DrivesBrowser } from '../components/DrivesBrowser';
+import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
 type Tab = 'overview' | 'drives' | 'trees' | 'users';
@@ -41,15 +42,6 @@ const SearchBox: React.FC<{ value: string; onChange: (v: string) => void; placeh
     />
   </div>
 );
-
-const Pager: React.FC<{ page: number; totalPages: number; onPage: (p: number) => void }> = ({ page, totalPages, onPage }) =>
-  totalPages <= 1 ? null : (
-    <div className="flex items-center justify-between gap-2">
-      <Button variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Button>
-      <span className="text-muted-foreground">Page {page} of {totalPages}</span>
-      <Button variant="secondary" disabled={page >= totalPages} onClick={() => onPage(page + 1)}>Next</Button>
-    </div>
-  );
 
 /** Paged, searchable admin list (trees or people). */
 function usePagedList<T>(fetcher: (page: number, limit: number, search: string) => Promise<{ success: boolean; data: T[]; total: number; totalPages: number }>) {
@@ -216,7 +208,7 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
         </Field>
       </div>
       <Field label="What will volunteers do?" htmlFor="drive-desc" description="What to bring, where to meet, how long it takes.">
-        <Textarea id="drive-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} />
+        <Textarea id="drive-desc" rows={6} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} />
       </Field>
       <Field label="Where" description="Search for the area, then move the map so the pin sits on the meeting point.">
         <div className="flex gap-2">
@@ -253,122 +245,51 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
   );
 };
 
-const DriveView: React.FC<{ drive: Drive; onShowOnMap: (d: Drive) => void }> = ({ drive, onShowOnMap }) => {
-  const [copied, setCopied] = useState(false);
-  const hasSpot = drive.latitude != null && drive.longitude != null;
-  const share = async () => {
-    const url = `${window.location.origin}/?drive=${drive.id}`;
-    try {
-      if (navigator.share) await navigator.share({ title: drive.title, url });
-      else {
-        await navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch {
-      // Share sheet dismissed
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Badge variant="drive" className="self-start">Planting drive</Badge>
-        <h2 className="text-2xl">{drive.title}</h2>
-        <p className="flex items-center gap-2 text-muted-foreground">
-          <Calendar className="size-4" aria-hidden="true" /> {formatDriveDate(drive)}
-        </p>
-        {drive.address && <p className="text-muted-foreground">{drive.address}</p>}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="secondary" size="xl" onClick={share}>
-          {copied ? <Check aria-hidden="true" /> : <Share2 aria-hidden="true" />} {copied ? 'Link copied' : 'Share'}
-        </Button>
-        {hasSpot && (
-          <Button size="xl" onClick={() => onShowOnMap(drive)}>
-            <MapIcon aria-hidden="true" /> Show on map
-          </Button>
-        )}
-      </div>
-      <p className="leading-relaxed whitespace-pre-wrap">{drive.description}</p>
-      <LiveTracker room={`drive_${drive.id}`} targetName={drive.title} />
-      {hasSpot && <MiniMap center={{ lat: drive.latitude!, lng: drive.longitude! }} pin={{ lat: drive.latitude!, lng: drive.longitude! }} liveRoom={`drive_${drive.id}`} />}
-    </div>
-  );
-};
-
-const DrivesTab: React.FC<{ onOpen: (d: Drive) => void; onNew: () => void; refreshKey: number }> = ({ onOpen, onNew, refreshKey }) => {
-  const [drives, setDrives] = useState<Drive[] | null>(null);
-  useEffect(() => {
-    fetchGlobalDrives().then((res) => setDrives(res.success ? res.data : []), () => setDrives([]));
-  }, [refreshKey]);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Button size="xl" onClick={onNew}>
-        <Plus aria-hidden="true" /> Schedule a drive
-      </Button>
-      {!drives ? (
-        <Spinner />
-      ) : drives.length === 0 ? (
-        <p className="py-4 text-center text-muted-foreground">No drives yet. Schedule one and share the link with volunteers.</p>
-      ) : (
-        <ul className="divide-y divide-border">
-          {drives.map((d) => (
-            <li key={d.id}>
-              <button type="button" onClick={() => onOpen(d)} className="flex w-full cursor-pointer items-center gap-4 rounded-lg py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-bark/15 text-bark">
-                  <Calendar className="size-5" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-lg font-medium">{d.title}</span>
-                  <span className="block truncate text-muted-foreground">{formatDriveDate(d)}</span>
-                </span>
-                <ChevronRight className="size-5 text-muted-foreground" aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-
 export const AdminPage: React.FC<{ you: LatLng | null; onClose: () => void; onShowDriveOnMap: (d: Drive) => void }> = ({ you, onClose, onShowDriveOnMap }) => {
   const [tab, setTab] = useState<Tab>('overview');
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  if (creating) {
-    return (
-      <Page title="Schedule a drive" onBack={() => setCreating(false)}>
-        <DriveForm
-          you={you}
-          onDone={() => {
-            setCreating(false);
-            setRefreshKey((k) => k + 1);
-          }}
-        />
-      </Page>
-    );
-  }
-
-  if (drive) {
-    return (
-      <Page title="Drive" onBack={() => setDrive(null)}>
-        <DriveView drive={drive} onShowOnMap={onShowDriveOnMap} />
-      </Page>
-    );
-  }
-
+  // The admin page stays underneath while a drive or the schedule form is open,
+  // so going back keeps the tab, search, filters and page you were on
   return (
-    <Page title="Admin" onBack={onClose}>
-      <Chips label="Section" options={TABS} value={tab} onChange={setTab} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
-      {tab === 'overview' && <Overview />}
-      {tab === 'drives' && <DrivesTab onOpen={setDrive} onNew={() => setCreating(true)} refreshKey={refreshKey} />}
-      {tab === 'trees' && <TreesList />}
-      {tab === 'users' && <PeopleList />}
-    </Page>
+    <>
+      <Page title="Admin" onBack={onClose} wide>
+        <Chips label="Section" options={TABS} value={tab} onChange={setTab} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
+        {tab === 'overview' && <Overview />}
+        {tab === 'drives' && (
+          <DrivesBrowser
+            onOpen={setDrive}
+            refreshKey={refreshKey}
+            actions={
+              <Button size="xl" onClick={() => setCreating(true)} className="w-full">
+                <Plus aria-hidden="true" /> Schedule a drive
+              </Button>
+            }
+          />
+        )}
+        {tab === 'trees' && <TreesList />}
+        {tab === 'users' && <PeopleList />}
+      </Page>
+
+      {drive && (
+        <Page title="Drive" onBack={() => setDrive(null)}>
+          <DriveView drive={drive} you={you} onShowOnMap={onShowDriveOnMap} />
+        </Page>
+      )}
+
+      {creating && (
+        <Page title="Schedule a drive" onBack={() => setCreating(false)}>
+          <DriveForm
+            you={you}
+            onDone={() => {
+              setCreating(false);
+              setRefreshKey((k) => k + 1);
+            }}
+          />
+        </Page>
+      )}
+    </>
   );
 };

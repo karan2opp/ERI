@@ -1,7 +1,7 @@
 import { ExternalLink, Navigation } from 'lucide-react';
 import type { LatLng } from '../../types';
 import type { WalkRoute } from '../../lib/route';
-import { formatDistance } from '../../utils/geo';
+import { formatDistance, formatMinutes } from '../../utils/geo';
 import { Button, buttonClass } from '../ui/button';
 import { Spinner } from '../ui/spinner';
 
@@ -47,7 +47,7 @@ export const NavigationPanel: React.FC<{
       ) : (
         <div>
           <p className="flex items-baseline gap-2">
-            <span className="font-heading text-4xl font-bold text-leaf tabular-nums">{minutes ?? '–'} min</span>
+            <span className="font-heading text-4xl font-bold text-leaf tabular-nums">{minutes !== null ? formatMinutes(minutes) : '–'}</span>
             {meters !== null && <span className="font-heading text-2xl font-bold text-muted-foreground tabular-nums">{formatDistance(meters)}</span>}
           </p>
           <p className="mt-1 truncate text-muted-foreground">
