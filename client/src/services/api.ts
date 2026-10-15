@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Tree, CareLog, User, Drive, Role } from '../types';
+import type { Tree, CareLog, User, Drive, Role, DriveType, DriveVisibility } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -217,9 +217,26 @@ export const getDriveById = async (id: string) => {
   return res.data;
 };
 
-export const createGlobalDrive = async (data: { title: string, description: string, date: string, time: string, latitude?: number, longitude?: number, address: string, googleMapsUrl?: string }) => {
+export const createGlobalDrive = async (data: {
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  latitude?: number;
+  longitude?: number;
+  address: string;
+  googleMapsUrl?: string;
+  type: DriveType;
+  visibility: DriveVisibility;
+}) => {
   const res = await api.post(`/drives`, data);
   return res.data;
+};
+
+/** Admin: change what kind of drive it is, or who can see it. */
+export const updateDriveSettings = async (id: string, settings: { type?: DriveType; visibility?: DriveVisibility }): Promise<Drive> => {
+  const res = await api.patch(`/drives/${id}`, settings);
+  return res.data.data;
 };
 
 // Maps & Geocoding APIs (Proxied through backend using Google Maps)
@@ -257,6 +274,10 @@ export const fetchDrivesPage = async (params: {
   search?: string;
   date?: string | null;
   when: 'upcoming' | 'past' | 'all';
+  /** Only this kind of drive */
+  type?: DriveType | null;
+  /** Only drives with this visibility (team members and admins; everyone else only ever sees drives for everyone) */
+  visibility?: DriveVisibility | null;
 }): Promise<DrivesPageResult> => {
   const res = await api.get('/drives', {
     params: {
@@ -266,6 +287,8 @@ export const fetchDrivesPage = async (params: {
       today: localToday(),
       ...(params.search ? { search: params.search } : {}),
       ...(params.date ? { date: params.date } : {}),
+      ...(params.type ? { type: params.type } : {}),
+      ...(params.visibility ? { visibility: params.visibility } : {}),
     },
   });
   return res.data;

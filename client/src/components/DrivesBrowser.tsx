@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, ChevronRight, Search, X } from 'lucide-react';
-import type { Drive } from '../types';
+import { CalendarDays, ChevronRight, Lock, Search, X } from 'lucide-react';
+import type { Drive, DriveType, DriveVisibility } from '../types';
 import { fetchDrivesPage, type DrivesPageResult } from '../services/api';
-import { driveStartsAt, isUpcoming } from '../lib/drives';
+import { DRIVE_TYPE_LABEL, driveStartsAt, isUpcoming } from '../lib/drives';
 import { cn } from '../lib/cn';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Chips } from './ui/chips';
+import { Select } from './ui/field';
 import { Alert } from './ui/alert';
 import { Spinner } from './ui/spinner';
 import { Pager } from './ui/pager';
@@ -21,13 +22,28 @@ const WHEN_OPTIONS = [
   { value: 'all' as const, label: 'All' },
 ];
 
+type TypeFilter = 'ALL' | DriveType;
+type VisibilityFilter = 'ANY' | DriveVisibility;
+
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: 'ALL', label: 'All types' },
+  { value: 'PLANTATION', label: 'Plantation' },
+  { value: 'CLEANUP', label: 'Clean-up' },
+];
+
+const VISIBILITY_OPTIONS: { value: VisibilityFilter; label: string }[] = [
+  { value: 'ANY', label: 'Any visibility' },
+  { value: 'ALL', label: 'Everyone' },
+  { value: 'TEAM', label: 'Team only' },
+];
+
 const PAGE_SIZE = 10;
 
 const shortDate = (date: string) =>
   new Date(`${date}T00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
 /** One drive in the list: a date block, title, time and place, and whether it's coming up. */
-const DriveCard: React.FC<{ drive: Drive; onOpen: (d: Drive) => void }> = ({ drive, onOpen }) => {
+const DriveCard: React.FC<{ drive: Drive; showVisibility: boolean; onOpen: (d: Drive) => void }> = ({ drive, showVisibility, onOpen }) => {
   const at = driveStartsAt(drive);
   const upcoming = isUpcoming(drive);
   return (
@@ -40,7 +56,7 @@ const DriveCard: React.FC<{ drive: Drive; onOpen: (d: Drive) => void }> = ({ dri
         <span
           className={cn(
             'flex size-16 shrink-0 flex-col items-center justify-center rounded-2xl',
-            upcoming ? 'bg-bark/12 text-bark' : 'bg-muted text-muted-foreground'
+            upcoming ? (drive.type === 'CLEANUP' ? 'bg-cleanup/12 text-cleanup' : 'bg-bark/12 text-bark') : 'bg-muted text-muted-foreground'
           )}
           aria-hidden="true"
         >
@@ -50,12 +66,17 @@ const DriveCard: React.FC<{ drive: Drive; onOpen: (d: Drive) => void }> = ({ dri
         <span className="min-w-0 flex-1">
           <span className="block truncate text-lg font-medium">{drive.title}</span>
           <span className="block truncate text-muted-foreground">
-            {at ? at.toLocaleDateString('en-IN', { weekday: 'short' }) : drive.date}, {drive.time}
+            {DRIVE_TYPE_LABEL[drive.type]} · {at ? at.toLocaleDateString('en-IN', { weekday: 'short' }) : drive.date}, {drive.time}
             {/* The year only when it isn't this year */}
             {at && at.getFullYear() !== new Date().getFullYear() ? `, ${at.getFullYear()}` : ''}
             {drive.address ? ` · ${drive.address}` : ''}
           </span>
         </span>
+        {showVisibility && drive.visibility === 'TEAM' && (
+          <Badge variant="outline" className="shrink-0" title="Only team members and admins can see this drive">
+            <Lock aria-hidden="true" /> <span className="max-sm:sr-only">Team</span>
+          </Badge>
+        )}
         <Badge variant={upcoming ? 'healthy' : 'outline'} className="max-sm:hidden">{upcoming ? 'Upcoming' : 'Past'}</Badge>
         <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
@@ -64,7 +85,7 @@ const DriveCard: React.FC<{ drive: Drive; onOpen: (d: Drive) => void }> = ({ dri
 };
 
 /**
- * Planting drives with every way to find one: search by title, Upcoming / Past (the full history) /
+ * Drives with every way to find one: search by title, kind of drive, Upcoming / Past (the full history) /
  * All with counts, a calendar to pick a day, and pagination. Used on the public Drives page and in Admin.
  */
 export const DrivesBrowser: React.FC<{
@@ -73,11 +94,15 @@ export const DrivesBrowser: React.FC<{
   refreshKey?: number;
   /** Shown above the filters, e.g. Admin's "Schedule a drive" */
   actions?: React.ReactNode;
-}> = ({ onOpen, refreshKey = 0, actions }) => {
+  /** Team members and admins can filter by visibility and see which drives are team only */
+  showVisibility?: boolean;
+}> = ({ onOpen, refreshKey = 0, actions, showVisibility = false }) => {
   const [when, setWhen] = useState<When>('upcoming');
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState(''); // debounced query
   const [date, setDate] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>('ANY');
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<DrivesPageResult | null>(null);
@@ -91,7 +116,7 @@ export const DrivesBrowser: React.FC<{
   }, [query]);
 
   // Any new filter starts again from page 1
-  useEffect(() => setPage(1), [search, date, when]);
+  useEffect(() => setPage(1), [search, date, when, typeFilter, visibilityFilter]);
 
   // A picked day shows every drive on it, whether it's coming up or already happened
   const effectiveWhen: When = date ? 'all' : when;
@@ -99,7 +124,15 @@ export const DrivesBrowser: React.FC<{
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchDrivesPage({ page, limit: PAGE_SIZE, search, date, when: effectiveWhen }).then(
+    fetchDrivesPage({
+      page,
+      limit: PAGE_SIZE,
+      search,
+      date,
+      when: effectiveWhen,
+      type: typeFilter === 'ALL' ? null : typeFilter,
+      visibility: visibilityFilter === 'ANY' ? null : visibilityFilter,
+    }).then(
       (res) => {
         if (cancelled) return;
         setResult(res);
@@ -115,12 +148,14 @@ export const DrivesBrowser: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [page, search, date, effectiveWhen, refreshKey]);
+  }, [page, search, date, effectiveWhen, typeFilter, visibilityFilter, refreshKey]);
 
-  const filtersOn = Boolean(search || date);
+  const filtersOn = Boolean(search || date || typeFilter !== 'ALL' || visibilityFilter !== 'ANY');
   const clearFilters = () => {
     setQuery('');
     setDate(null);
+    setTypeFilter('ALL');
+    setVisibilityFilter('ANY');
   };
 
   const heading = date
@@ -164,6 +199,22 @@ export const DrivesBrowser: React.FC<{
                 : o.label,
             }))}
           />
+
+          {/* Kind of drive, and (team members and admins) who it's visible to */}
+          <div className={cn('grid gap-2', showVisibility && 'grid-cols-2')}>
+            <Select aria-label="Kind of drive" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}>
+              {TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+            {showVisibility && (
+              <Select aria-label="Visibility" value={visibilityFilter} onChange={(e) => setVisibilityFilter(e.target.value as VisibilityFilter)}>
+                {VISIBILITY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            )}
+          </div>
 
           <Button variant="secondary" className="md:hidden" onClick={() => setCalendarOpen((o) => !o)} aria-expanded={calendarOpen}>
             <CalendarDays aria-hidden="true" /> {calendarOpen ? 'Hide calendar' : 'Pick a date'}
@@ -235,7 +286,7 @@ export const DrivesBrowser: React.FC<{
             result && (
               <ul className={cn('flex flex-col gap-1 transition-opacity', loading && 'opacity-60')} aria-busy={loading}>
                 {result.data.map((d) => (
-                  <DriveCard key={d.id} drive={d} onOpen={onOpen} />
+                  <DriveCard key={d.id} drive={d} showVisibility={showVisibility} onOpen={onOpen} />
                 ))}
               </ul>
             )

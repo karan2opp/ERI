@@ -5,7 +5,7 @@ import { CalendarDays, ChevronRight, LogOut, Monitor, Moon, Shield, Sun, Trees, 
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
-import { ROLE_LABEL, canSeeDrives } from '../lib/roles';
+import { ROLE_LABEL } from '../lib/roles';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Chips } from './ui/chips';
@@ -34,7 +34,7 @@ const NavRow: React.FC<{ icon: React.ReactNode; label: string; hint?: string; on
 /**
  * The round profile button over the map, and the drawer it opens from the right: who you are,
  * your numbers, and every place you can go (my trees, drives, account, admin), plus theme and sign out.
- * Planting drives show up here only for team members and admins. Signed out, it offers sign-in.
+ * Drives are open to everyone here; the server only sends each person the ones they may see. Signed out, it offers sign-in.
  */
 export const ProfileDrawer: React.FC<{
   role: Role;
@@ -46,7 +46,6 @@ export const ProfileDrawer: React.FC<{
   onAdmin: () => void;
 }> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin }) => {
   const isAdmin = role === 'ADMIN';
-  const seesDrives = canSeeDrives(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);
@@ -120,22 +119,20 @@ export const ProfileDrawer: React.FC<{
                   </div>
                 </div>
 
-                <div className={cn('mt-5 grid gap-2 px-2', seesDrives ? 'grid-cols-2' : 'grid-cols-1')}>
+                <div className="mt-5 grid grid-cols-2 gap-2 px-2">
                   <div className="rounded-2xl bg-muted p-3">
                     <p className="font-heading text-2xl font-bold tabular-nums">{treesPlanted}</p>
                     <p className="text-sm text-muted-foreground">{treesPlanted === 1 ? 'tree planted' : 'trees planted'}</p>
                   </div>
-                  {seesDrives && (
-                    <div className="rounded-2xl bg-muted p-3">
-                      <p className="font-heading text-2xl font-bold tabular-nums">{upcomingDrives}</p>
-                      <p className="text-sm text-muted-foreground">{upcomingDrives === 1 ? 'drive coming up' : 'drives coming up'}</p>
-                    </div>
-                  )}
+                  <div className="rounded-2xl bg-muted p-3">
+                    <p className="font-heading text-2xl font-bold tabular-nums">{upcomingDrives}</p>
+                    <p className="text-sm text-muted-foreground">{upcomingDrives === 1 ? 'drive coming up' : 'drives coming up'}</p>
+                  </div>
                 </div>
 
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Profile">
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
-                  {seesDrives && <NavRow icon={<CalendarDays />} label="Planting drives" hint="Upcoming drives and the full history" onClick={go(onDrives)} />}
+                  <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
                   <NavRow icon={<UserRound />} label="Account" hint="Name, photo and password" onClick={go(onAccount)} />
                   {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
                 </nav>
@@ -149,6 +146,9 @@ export const ProfileDrawer: React.FC<{
                     <Button size="xl" className="w-full" onClick={() => setOpen(false)}>Sign in</Button>
                   </SignInButton>
                 </div>
+                <nav className="mt-4 flex flex-col gap-1" aria-label="Drives">
+                  <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
+                </nav>
               </>
             )}
 

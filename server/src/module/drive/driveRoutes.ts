@@ -1,14 +1,18 @@
 import { Router } from 'express';
-import { createDrive, getDrives, getDriveById, getDriveCalendar } from './driveController';
-import { requireAuth, requireAdmin, requireTeam } from '../../common/middlewares/authMiddleware';
+import { createDrive, getDrives, getDriveById, getDriveCalendar, updateDriveSettings } from './driveController';
+import { requireAuth, requireAdmin, optionalAuth } from '../../common/middlewares/authMiddleware';
 
 const router = Router();
 
+// Scheduling and changing a drive needs an admin
 router.post('/', requireAuth, requireAdmin, createDrive);
-// Reading the schedule needs a team member or admin; scheduling a drive needs an admin
-router.get('/', requireAuth, requireTeam, getDrives);
+router.patch('/:id', requireAuth, requireAdmin, updateDriveSettings);
+
+// Reading depends on who's asking: drives for everyone are open to anyone (even signed out),
+// team-only drives need a team member or admin, and admins see all. The controller applies that.
+router.get('/', optionalAuth, getDrives);
 // Before '/:id' so "calendar" isn't read as an id
-router.get('/calendar', requireAuth, requireTeam, getDriveCalendar);
-router.get('/:id', requireAuth, requireTeam, getDriveById);
+router.get('/calendar', optionalAuth, getDriveCalendar);
+router.get('/:id', optionalAuth, getDriveById);
 
 export default router;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
-import type { Drive, LatLng, Tree, User } from '../types';
+import type { Drive, DriveType, DriveVisibility, LatLng, Tree, User } from '../types';
 import { createGlobalDrive, fetchAdminStats, fetchAdminUsers } from '../services/api';
 import { useUser } from '@clerk/react';
 import { formatPhone } from '../lib/phone';
@@ -167,6 +167,9 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
   const [time, setTime] = useState('');
   const [address, setAddress] = useState('');
   const [mapsUrl, setMapsUrl] = useState('');
+  const [type, setType] = useState<DriveType>('PLANTATION');
+  // Team only unless chosen otherwise, so a drive is never public by accident
+  const [visibility, setVisibility] = useState<DriveVisibility>('TEAM');
   const [center, setCenter] = useState<LatLng>(you ?? FALLBACK_CENTER);
   const [recenter, setRecenter] = useState(0);
   const [place, setPlace] = useState('');
@@ -204,6 +207,8 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
         googleMapsUrl: mapsUrl.trim() || undefined,
         latitude: center.lat,
         longitude: center.lng,
+        type,
+        visibility,
       });
       onDone();
     } catch (err) {
@@ -216,6 +221,24 @@ const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, 
 
   return (
     <div className="flex flex-col gap-6">
+      <Field label="Kind of drive">
+        <Chips
+          label="Kind of drive"
+          value={type}
+          onChange={setType}
+          options={[{ value: 'PLANTATION', label: 'Plantation drive' }, { value: 'CLEANUP', label: 'Clean-up drive' }]}
+          className="flex-wrap"
+        />
+      </Field>
+      <Field label="Who can see it" description={visibility === 'ALL' ? 'Everyone, including people who are not signed in.' : 'Only team members and admins. Admins always see every drive.'}>
+        <Chips
+          label="Who can see it"
+          value={visibility}
+          onChange={setVisibility}
+          options={[{ value: 'TEAM', label: 'Team only' }, { value: 'ALL', label: 'Everyone' }]}
+          className="flex-wrap"
+        />
+      </Field>
       <Field label="Title" htmlFor="drive-title">
         <Input id="drive-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Sunday planting at Shivaji Park" maxLength={255} />
       </Field>
@@ -287,6 +310,7 @@ export const AdminPage: React.FC<{
           <DrivesBrowser
             onOpen={setDrive}
             refreshKey={refreshKey}
+            showVisibility
             actions={
               <Button size="xl" onClick={() => setCreating(true)} className="w-full">
                 <Plus aria-hidden="true" /> Schedule a drive
@@ -300,7 +324,16 @@ export const AdminPage: React.FC<{
 
       {drive && (
         <Page title="Drive" onBack={() => setDrive(null)}>
-          <DriveView drive={drive} you={you} onShowOnMap={onShowDriveOnMap} />
+          <DriveView
+            drive={drive}
+            you={you}
+            onShowOnMap={onShowDriveOnMap}
+            showVisibility
+            onUpdated={(d) => {
+              setDrive(d);
+              setRefreshKey((k) => k + 1);
+            }}
+          />
         </Page>
       )}
 

@@ -10,7 +10,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
 /**
- * A month calendar for picking a day. Days with planting drives get a dot (and the count in
+ * A month calendar for picking a day. Days with drives get a dot (and the count in
  * their label); today has a ring; the chosen day is filled. Tap the chosen day again to clear it.
  */
 export const DriveCalendar: React.FC<{ value: string | null; onChange: (date: string | null) => void }> = ({ value, onChange }) => {

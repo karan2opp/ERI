@@ -17,6 +17,8 @@ export interface FlyToTarget extends LatLng {
 // Inline SVGs (lucide shapes) so pins render without React inside Leaflet's DOM.
 const TREE_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/></svg>';
+const BIN_SVG =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>';
 const SPROUT_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>';
 
@@ -31,7 +33,7 @@ const waterDropPin = (selected: boolean, label: string) =>
   '<g transform="translate(7.4 10.2) scale(0.385)" fill="none" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/></g></svg>';
 
-const pinIcon = (status: TreeStatus | 'drive', selected: boolean, label: string) => {
+const pinIcon = (status: TreeStatus | 'drive' | 'cleanup', selected: boolean, label: string) => {
   const key = `${status}-${selected}-${label}`;
   let icon = iconCache.get(key);
   if (!icon) {
@@ -39,7 +41,7 @@ const pinIcon = (status: TreeStatus | 'drive', selected: boolean, label: string)
       status === 'thirsty'
         ? L.divIcon({ html: waterDropPin(selected, label), className: 'pt-marker', iconSize: [40, 46], iconAnchor: [20, 30] })
         : L.divIcon({
-            html: `<div class="pt-pin" role="button" aria-label="${label}" data-status="${status}" data-selected="${selected}">${status === 'drive' ? SPROUT_SVG : TREE_SVG}</div>`,
+            html: `<div class="pt-pin" role="button" aria-label="${label}" data-status="${status}" data-selected="${selected}">${status === 'drive' ? SPROUT_SVG : status === 'cleanup' ? BIN_SVG : TREE_SVG}</div>`,
             className: 'pt-marker',
             iconSize: [36, 36],
             iconAnchor: [18, 18],
@@ -153,7 +155,7 @@ export interface TreeMapProps {
   trees: Tree[];
   selectedTreeId: string | null;
   onSelectTree: (tree: Tree) => void;
-  /** Planting drives to pin (the upcoming ones, plus whichever is selected) */
+  /** Drives to pin (the upcoming ones, plus whichever is selected): brown sprouts for plantation drives, purple bins for clean-ups */
   drives: Drive[];
   selectedDriveId: string | null;
   onSelectDrive: (drive: Drive) => void;
@@ -239,7 +241,7 @@ export const TreeMap: React.FC<TreeMapProps> = ({
                 <Marker
                   key={d.id}
                   position={[d.latitude, d.longitude]}
-                  icon={pinIcon('drive', d.id === selectedDriveId, d.title)}
+                  icon={pinIcon(d.type === 'CLEANUP' ? 'cleanup' : 'drive', d.id === selectedDriveId, d.title)}
                   zIndexOffset={d.id === selectedDriveId ? 600 : 400}
                   eventHandlers={{ click: () => onSelectDrive(d) }}
                   title={d.title}

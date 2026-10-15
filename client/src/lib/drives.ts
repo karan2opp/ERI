@@ -1,4 +1,14 @@
-import type { Drive } from '../types';
+import type { Drive, DriveType, DriveVisibility } from '../types';
+
+export const DRIVE_TYPE_LABEL: Record<DriveType, string> = {
+  PLANTATION: 'Plantation drive',
+  CLEANUP: 'Clean-up drive',
+};
+
+export const DRIVE_VISIBILITY_LABEL: Record<DriveVisibility, string> = {
+  ALL: 'Everyone',
+  TEAM: 'Team only',
+};
 
 /** "Sun, 12 October, 09:00" */
 export const formatDriveDate = (drive: Pick<Drive, 'date' | 'time'>) => {

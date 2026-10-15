@@ -28,7 +28,7 @@ PlanTree/
 │   │   │   ├── user/           # User Module (sync, profile)
 │   │   │   ├── tree/           # Tree Module (register, update, delete, map queries)
 │   │   │   ├── care/           # Care Module (watering logs, care history timeline)
-│   │   │   ├── drive/          # Community planting drives (admin-created)
+│   │   │   ├── drive/          # Plantation and clean-up drives (admin-created)
 │   │   │   ├── admin/          # Admin stats & listings (admin-only)
 │   │   │   └── maps/           # Rate-limited geocoding / places proxy
 │   │   │
@@ -75,15 +75,26 @@ npm run dev
   | Role | Can do |
   |---|---|
   | `USER` (default) | Plant trees, log every kind of care, see the map and trees |
-  | `TEAM_MEMBER` | Everything a user can, plus **see the planting drive schedule** (drives page, map pins, shared drive links, live walks) |
-  | `ADMIN` | Everything a team member can, plus the Admin area: users, trees, scheduling drives, and changing people's roles |
+  | `TEAM_MEMBER` | Everything a user can, plus **see team-only drives** (drives page, map pins, shared drive links, live walks) |
+  | `ADMIN` | Everything a team member can, plus the Admin area: users, trees, scheduling drives, changing a drive's type or visibility, and changing people's roles. **Admins see every drive.** |
 
 - **Changing roles:** admins use **Admin → Users** and pick a role for each person (you can't change your own, so there is always an admin). The first admin has to be set once in the database:
   ```sql
   UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com';
   ```
 - **Phone numbers:** anyone can add an optional phone number on their Account page. It is **not verified** (no code is sent) and is only visible to the person and to admins; it never appears in public tree, care or drive data. Admins can open any user's profile from **Admin → Users** (details, phone, role, trees planted, care activity) and search users by name, email or phone.
-- Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require `ADMIN`. Reading drives (`GET /api/v1/drives…`) requires `TEAM_MEMBER` or `ADMIN`.
+- Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require `ADMIN`. Reading drives (`GET /api/v1/drives…`) is open to anyone but filtered by who is asking (see below).
+
+## 🌳 Drives: types and visibility
+
+Every drive has a **type** and a **visibility**, both set by an admin when scheduling it and changeable later (`PATCH /api/v1/drives/:id` with `{ type?, visibility? }`).
+
+| | Values |
+|---|---|
+| Type | `PLANTATION` (tree plantation drive, brown sprout pin) or `CLEANUP` (clean-up drive, purple bin pin) |
+| Visibility | `ALL` (everyone, including signed-out visitors) or `TEAM` (team members and admins only). New drives default to `TEAM` so nothing is public by accident. |
+
+Signed-out visitors and normal users see only `ALL` drives; team members see `ALL` and `TEAM`; admins see everything. The server applies this to the list, the calendar, a single drive (a `TEAM` drive answers 401 signed out and 403 for a normal user) and the live-walk socket rooms.
 
 ## 🌱 Care schedules
 

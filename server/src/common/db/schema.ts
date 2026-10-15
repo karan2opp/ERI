@@ -95,6 +95,11 @@ export const drives = pgTable('drives', {
   longitude: doublePrecision('longitude'),
   address: varchar('address', { length: 500 }),
   googleMapsUrl: varchar('google_maps_url', { length: 1000 }),
+  // PLANTATION (a tree plantation drive) or CLEANUP (a clean-up drive)
+  type: varchar('type', { length: 20 }).default('PLANTATION').notNull(),
+  // Who can see it: ALL (everyone, even signed-out visitors) or TEAM (team members and admins).
+  // Admins always see every drive. New drives default to TEAM so nothing is public by accident.
+  visibility: varchar('visibility', { length: 10 }).default('TEAM').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

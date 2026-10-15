@@ -3,7 +3,7 @@ import { clerkClient, getAuth } from '@clerk/express';
 import { db } from '../db';
 import { users, User } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { canSeeDrives } from '../auth/roles';
+import { canSeeTeamDrives } from '../auth/roles';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -86,8 +86,30 @@ export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: Nex
 
 /** Must run after requireAuth. Team members and admins only (the planting drive schedule). */
 export const requireTeam = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (!canSeeDrives(req.userRole)) {
-    return res.status(403).json({ success: false, error: 'Planting drives are for team members and admins' });
+  if (!canSeeTeamDrives(req.userRole)) {
+    return res.status(403).json({ success: false, error: 'This is for team members and admins' });
+  }
+  next();
+};
+
+/**
+ * Like requireAuth, but never refuses: if the visitor is signed in it fills in userId and userRole
+ * (it does not create accounts), otherwise they carry on as a signed-out visitor. Used where
+ * the answer depends on who is asking (which drives you may see).
+ */
+export const optionalAuth = async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+  try {
+    const { userId } = getAuth(req);
+    if (userId) {
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (user) {
+        req.user = user;
+        req.userId = user.id;
+        req.userRole = user.role;
+      }
+    }
+  } catch {
+    // Treat a failed lookup as signed out: they simply see fewer drives
   }
   next();
 };

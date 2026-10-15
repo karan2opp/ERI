@@ -4,7 +4,7 @@ import { Calendar, Check, ExternalLink, MapPin, Share2 } from 'lucide-react';
 import type { Drive } from '../types';
 import { getDriveById, setAuthTokenGetter } from '../services/api';
 import { Logo, Sapling } from '../components/ui/logo';
-import { Badge } from '../components/ui/badge';
+import { DriveTypeBadge } from '../components/DriveBadges';
 import { ExpandableText } from '../components/ui/expandable-text';
 import { Button, buttonClass } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
@@ -12,8 +12,8 @@ import { MiniMap } from '../components/MiniMap';
 import { driveMapsUrl, formatDriveDate } from '../lib/drives';
 
 /**
- * The page a drive's share link opens (?drive=<id>). The planting drive schedule is for team members
- * and admins, so you have to be signed in with one of those roles; anyone else is told why.
+ * The page a drive's share link opens (?drive=<id>). Drives for everyone open for anyone, even signed out;
+ * team-only drives need a team member or admin, and anyone else is told why.
  */
 export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
   const { isLoaded, isSignedIn, getToken } = useAuth();
@@ -83,7 +83,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <Sapling />
             <h1 className="text-3xl">Sign in to see this drive</h1>
-            <p className="max-w-xs text-muted-foreground">Planting drives are shared with team members. Sign in with your team account to see the details.</p>
+            <p className="max-w-xs text-muted-foreground">This drive is for the team. Sign in with your team account to see the details.</p>
             <SignInButton mode="modal">
               <Button size="xl">Sign in</Button>
             </SignInButton>
@@ -94,7 +94,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <Sapling />
             <h1 className="text-3xl">This drive is for the team</h1>
-            <p className="max-w-xs text-muted-foreground">Planting drives can only be seen by team members and admins. If you should have access, ask an admin to add you to the team.</p>
+            <p className="max-w-xs text-muted-foreground">This drive can only be seen by team members and admins. If you should have access, ask an admin to add you to the team.</p>
             <a href="/" className={buttonClass('default', 'xl')}>Open the map</a>
           </div>
         )}
@@ -111,7 +111,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
         {drive && (
           <>
             <div className="flex flex-col gap-3">
-              <Badge variant="drive" className="self-start">Planting drive</Badge>
+              <DriveTypeBadge type={drive.type} className="self-start" />
               <h1 className="text-4xl leading-tight">{drive.title}</h1>
               <p className="flex items-center gap-2 text-lg">
                 <Calendar className="size-5 text-muted-foreground" aria-hidden="true" /> {formatDriveDate(drive)}
@@ -131,7 +131,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
 
             <ExpandableText text={drive.description} lines={6} className="text-lg" />
 
-            {spot && <MiniMap center={spot} pin={spot} liveRoom={`drive_${drive.id}`} className="h-80" />}
+            {spot && <MiniMap center={spot} pin={spot} pinCleanup={drive.type === 'CLEANUP'} liveRoom={`drive_${drive.id}`} className="h-80" />}
 
             <p className="pb-6 text-center text-sm text-muted-foreground">
               Organised by the <a href="/" className="underline underline-offset-4">Earth Revival Initiative</a>. Plant today, revive tomorrow.

@@ -9,7 +9,7 @@ import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
 import { sampleTreesAround } from './lib/demo';
 import { useWalkingRoute } from './lib/route';
 import { useHeading } from './lib/heading';
-import { asRole, canSeeDrives } from './lib/roles';
+import { asRole, canSeeTeamDrives } from './lib/roles';
 import { formatDriveDate, isUpcoming, splitDrives } from './lib/drives';
 import { cn } from './lib/cn';
 import { useIsDark } from './lib/theme';
@@ -95,8 +95,8 @@ function MapApp() {
   const [role, setRole] = useState<Role>('USER');
   // Your own phone number (optional, not verified)
   const [phone, setPhone] = useState<string | null>(null);
-  // Planting drives are for team members and admins only
-  const seesDrives = canSeeDrives(role);
+  // Team members and admins also see team-only drives; the server sends each person only what they may see
+  const seesTeamDrives = canSeeTeamDrives(role);
   const [serverTrees, setServerTrees] = useState<Tree[] | null>(null);
   const [you, setYou] = useState<LatLng | null>(null);
   // How sure the phone is of where you are (metres), and the direction you're moving (GPS only reports it while moving)
@@ -112,7 +112,7 @@ function MapApp() {
   const [query, setQuery] = useState('');
   const [sheet, setSheet] = useState<SheetState>('half');
   const [selection, setSelection] = useState<Selection>(null);
-  // Planting drives, shown to everyone (null while loading)
+  // Drives this person may see (null while loading)
   const [drives, setDrives] = useState<Drive[] | null>(null);
   const [editing, setEditing] = useState<Tree | null>(null);
 
@@ -210,7 +210,7 @@ function MapApp() {
   }, []);
   useEffect(loadTrees, [loadTrees]);
 
-  // ---- Planting drives (reloaded whenever we come back to the map, e.g. after an admin schedules one) ----
+  // ---- Drives (reloaded whenever we come back to the map, e.g. after an admin schedules one) ----
   const loadDrives = useCallback(() => {
     // For the map pins and the drawer's count; failures just leave the last list in place
     fetchGlobalDrives().then(
@@ -218,14 +218,10 @@ function MapApp() {
       () => {}
     );
   }, []);
+  // Reload when the role changes too: signing in as a team member or admin reveals more drives
   useEffect(() => {
-    if (!seesDrives) {
-      // Normal users and signed-out visitors never load, pin or see drives
-      setDrives(null);
-      return;
-    }
     if (screen === 'map') loadDrives();
-  }, [screen, loadDrives, seesDrives]);
+  }, [screen, loadDrives, role]);
 
   // Sample trees only while the map would otherwise be empty
   const sampleCenter = you ?? start;
@@ -373,7 +369,7 @@ function MapApp() {
     );
   } else if (selectedDrive) {
     const d = selectedDrive;
-    sheetLabel = 'Planting drive';
+    sheetLabel = d.type === 'CLEANUP' ? 'Clean-up drive' : 'Plantation drive';
     sheetPeek = (
       <ItemPeek
         icon={<Calendar aria-hidden="true" />}
@@ -391,6 +387,7 @@ function MapApp() {
         onClose={clearSelection}
         onDirections={() => d.latitude != null && d.longitude != null && startDirections(d.title, { lat: d.latitude, lng: d.longitude })}
         onWalkLive={() => setWalkLive({ room: `drive_${d.id}`, name: d.title })}
+        showVisibility={seesTeamDrives}
       />
     );
   } else {
@@ -603,8 +600,9 @@ function MapApp() {
 
       {screen === 'account' && <ProfilePage role={role} phone={phone} onPhoneChanged={setPhone} myTrees={myTrees} onClose={back} onProfileChanged={loadTrees} />}
 
-      {screen === 'drives' && seesDrives && (
+      {screen === 'drives' && (
         <DrivesPage
+          role={role}
           you={you}
           onClose={back}
           onShowOnMap={(d) => {

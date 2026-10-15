@@ -7,8 +7,9 @@ import { Server } from 'socket.io';
 import { eq } from 'drizzle-orm';
 import { env } from './common/config/env';
 import { db } from './common/db';
-import { users } from './common/db/schema';
-import { canSeeDrives } from './common/auth/roles';
+import { drives, users } from './common/db/schema';
+import { canSeeTeamDrives } from './common/auth/roles';
+import { isUuid } from './common/utils/validation';
 
 import userRoutes from './module/user/userRoutes';
 import treeRoutes from './module/tree/treeRoutes';
@@ -130,28 +131,37 @@ io.use(async (socket, next) => {
 });
 
 /**
- * Drive rooms are part of the planting drive schedule, so only team members and admins may watch or
- * broadcast in them. The role is read from the database (cached for 30 s per socket), so a promotion
- * or demotion takes effect within moments without reconnecting.
+ * A drive room follows its drive: a drive for everyone has an open room (anyone may watch; sending
+ * still needs a sign-in), a team-only drive's room is for team members and admins. Both the drive's
+ * visibility and the person's role are read from the database, cached for 30 s per socket and room,
+ * so a change takes effect within moments without reconnecting.
  */
-const ROLE_CACHE_MS = 30_000;
-async function mayUseDriveRooms(socket: { data: Record<string, any> }): Promise<boolean> {
-  const userId: string | undefined = socket.data.userId;
-  if (!userId) return false;
-  const cached = socket.data.roleCheck as { at: number; ok: boolean } | undefined;
-  if (cached && Date.now() - cached.at < ROLE_CACHE_MS) return cached.ok;
-  const [row] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
-  const ok = canSeeDrives(row?.role);
-  socket.data.roleCheck = { at: Date.now(), ok };
+const ROOM_CACHE_MS = 30_000;
+async function mayUseRoom(socket: { data: Record<string, any> }, room: string): Promise<boolean> {
+  if (!room.startsWith('drive_')) return true; // tree rooms are open
+  const cache: Record<string, { at: number; ok: boolean }> = (socket.data.roomChecks ??= {});
+  const hit = cache[room];
+  if (hit && Date.now() - hit.at < ROOM_CACHE_MS) return hit.ok;
+
+  const driveId = room.slice('drive_'.length);
+  let ok = false;
+  if (isUuid(driveId)) {
+    const [drive] = await db.select({ visibility: drives.visibility }).from(drives).where(eq(drives.id, driveId)).limit(1);
+    if (drive?.visibility === 'ALL') {
+      ok = true;
+    } else if (drive && socket.data.userId) {
+      const [row] = await db.select({ role: users.role }).from(users).where(eq(users.id, socket.data.userId)).limit(1);
+      ok = canSeeTeamDrives(row?.role);
+    }
+  }
+  cache[room] = { at: Date.now(), ok };
   return ok;
 }
-
-const isDriveRoom = (room: string) => room.startsWith('drive_');
 
 io.on('connection', (socket) => {
   socket.on('join_tracking', async (room) => {
     if (typeof room !== 'string' || !ROOM_PATTERN.test(room)) return;
-    if (isDriveRoom(room) && !(await mayUseDriveRooms(socket))) return;
+    if (!(await mayUseRoom(socket, room))) return;
     socket.join(room);
   });
 
@@ -173,7 +183,7 @@ io.on('connection', (socket) => {
     ) {
       return;
     }
-    if (isDriveRoom(room) && !(await mayUseDriveRooms(socket))) return;
+    if (!(await mayUseRoom(socket, room))) return;
 
     // Identity is taken from the verified token, never from the client payload.
     socket.to(room).emit('receive_location', {

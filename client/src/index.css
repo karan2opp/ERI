@@ -13,7 +13,7 @@
  *   thirsty  water blue   trees that need water (shown with a water-drop icon)
  *   warning  amber        low health
  *   water    river blue   water/care actions, live walkers
- *   bark     brown        planting drives
+ *   bark     brown        plantation drives (clean-up drives are purple)
  *   destructive rust      delete, end, errors
  */
 :root {
@@ -42,6 +42,7 @@
   --warning: #e09a1c;
   --water: #2f7fb8;
   --you: #e53935;
+  --cleanup: #7a4fd6;
   --bark: #7a5638;
   --map: #eef2ea;
   --elev-float: 0 2px 8px rgb(19 60 22 / 0.14);
@@ -71,6 +72,7 @@
   --warning: #f0b13e;
   --water: #6ab0e3;
   --you: #ff6b66;
+  --cleanup: #b095ff;
   --bark: #c49a6c;
   --map: #17231c;
   --elev-float: 0 2px 8px rgb(0 0 0 / 0.6);
@@ -104,6 +106,7 @@
   --color-warning: var(--warning);
   --color-water: var(--water);
   --color-bark: var(--bark);
+  --color-cleanup: var(--cleanup);
   --color-map: var(--map);
 
   --shadow-float: var(--elev-float);
@@ -203,6 +206,7 @@
 }
 .pt-pin[data-status="healthy"] { background: var(--leaf); }
 .pt-pin[data-status="drive"] { background: var(--bark); }
+.pt-pin[data-status="cleanup"] { background: var(--cleanup); }
 .pt-pin[data-selected="true"] {
   transform: scale(1.25);
   box-shadow: 0 0 0 2px var(--foreground), var(--elev-float);

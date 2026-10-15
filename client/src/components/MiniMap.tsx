@@ -10,7 +10,12 @@ import { LiveMapOverlay } from './LiveMapOverlay';
 
 const SPROUT_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>';
-const drivePin = L.divIcon({ html: `<div class="pt-pin" data-status="drive">${SPROUT_SVG}</div>`, className: 'pt-marker', iconSize: [36, 36], iconAnchor: [18, 18] });
+const BIN_SVG =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>';
+const pinFor = (cleanup: boolean) =>
+  L.divIcon({ html: `<div class="pt-pin" data-status="${cleanup ? 'cleanup' : 'drive'}">${cleanup ? BIN_SVG : SPROUT_SVG}</div>`, className: 'pt-marker', iconSize: [36, 36], iconAnchor: [18, 18] });
+const drivePin = pinFor(false);
+const cleanupPin = pinFor(true);
 
 const Recenter: React.FC<{ center: LatLng; zoom: number; token: number }> = ({ center, zoom, token }) => {
   const map = useMap();
@@ -42,9 +47,11 @@ export const MiniMap: React.FC<{
   recenterToken?: number;
   onCenterChange?: (c: LatLng) => void;
   pin?: LatLng | null;
+  /** A clean-up drive's pin is purple with a bin instead of a brown sprout */
+  pinCleanup?: boolean;
   liveRoom?: string;
   className?: string;
-}> = ({ center, zoom = 15, recenterToken = 0, onCenterChange, pin, liveRoom, className }) => {
+}> = ({ center, zoom = 15, recenterToken = 0, onCenterChange, pin, pinCleanup, liveRoom, className }) => {
   const dark = useIsDark();
   const tiles = useTileSource(dark);
   return (
@@ -53,7 +60,7 @@ export const MiniMap: React.FC<{
         {tiles && <TileLayer key={tiles.url} url={tiles.url} attribution={tiles.attribution} subdomains={tiles.subdomains} maxZoom={tiles.maxZoom} maxNativeZoom={tiles.maxZoom} />}
         <Recenter center={center} zoom={zoom} token={recenterToken} />
         {onCenterChange && <CenterReporter onCenterChange={onCenterChange} />}
-        {pin && <Marker position={[pin.lat, pin.lng]} icon={drivePin} interactive={false} />}
+        {pin && <Marker position={[pin.lat, pin.lng]} icon={pinCleanup ? cleanupPin : drivePin} interactive={false} />}
         {liveRoom && <LiveMapOverlay room={liveRoom} />}
       </MapContainer>
       {tiles?.google && <GoogleCredit dark={dark} className="absolute bottom-2 left-2 z-[1000]" />}

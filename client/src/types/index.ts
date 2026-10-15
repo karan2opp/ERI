@@ -1,4 +1,4 @@
-/** USER can use the map; TEAM_MEMBER also sees the planting drive schedule; ADMIN manages everything. */
+/** USER can use the map; TEAM_MEMBER also sees team-only drives; ADMIN manages everything and sees all drives. */
 export type Role = 'USER' | 'TEAM_MEMBER' | 'ADMIN';
 
 export interface User {
@@ -60,6 +60,12 @@ export interface LatLng {
   lng: number;
 }
 
+/** A tree plantation drive or a clean-up drive. */
+export type DriveType = 'PLANTATION' | 'CLEANUP';
+
+/** Who can see a drive: everyone (even signed-out visitors), or team members and admins only. */
+export type DriveVisibility = 'ALL' | 'TEAM';
+
 export interface Drive {
   id: string;
   title: string;
@@ -70,5 +76,7 @@ export interface Drive {
   longitude?: number | null;
   address?: string | null;
   googleMapsUrl?: string | null;
+  type: DriveType;
+  visibility: DriveVisibility;
   createdAt?: string;
 }

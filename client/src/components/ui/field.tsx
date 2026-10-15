@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
 // Filled inputs with no outline, and 16px text so iOS doesn't zoom in.
@@ -9,6 +10,17 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
   ({ className, ...props }, ref) => <input ref={ref} className={cn(inputBase, 'h-12', className)} {...props} />
 );
 Input.displayName = 'Input';
+
+/** A drop-down list styled like Input, with its own chevron (the browser's arrow is hidden). */
+export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(({ className, children, ...props }, ref) => (
+  <div className="relative">
+    <select ref={ref} className={cn(inputBase, 'h-12 cursor-pointer appearance-none pr-11', className)} {...props}>
+      {children}
+    </select>
+    <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+  </div>
+));
+Select.displayName = 'Select';
 
 /**
  * A text box that grows with what you type: it starts at `rows` lines, gets taller as you write,

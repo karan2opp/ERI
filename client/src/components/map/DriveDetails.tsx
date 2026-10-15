@@ -5,17 +5,20 @@ import type { Drive, LatLng } from '../../types';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { driveMapsUrl, formatDriveDate, isUpcoming, shareDrive } from '../../lib/drives';
 import { Badge } from '../ui/badge';
+import { DriveTypeBadge, DriveVisibilityBadge } from '../DriveBadges';
 import { ExpandableText } from '../ui/expandable-text';
 import { Button, buttonClass } from '../ui/button';
 
-/** A planting drive selected on the map. */
+/** A drive selected on the map. */
 export const DriveDetails: React.FC<{
   drive: Drive;
   you: LatLng | null;
   onClose: () => void;
   onDirections: () => void;
   onWalkLive: () => void;
-}> = ({ drive, you, onClose, onDirections, onWalkLive }) => {
+  /** Team members and admins also see who can see the drive */
+  showVisibility?: boolean;
+}> = ({ drive, you, onClose, onDirections, onWalkLive, showVisibility = false }) => {
   const { isSignedIn } = useUser();
   const meters = you && drive.latitude != null && drive.longitude != null ? getDistanceInMeters(you.lat, you.lng, drive.latitude, drive.longitude) : null;
   const maps = driveMapsUrl(drive);
@@ -31,8 +34,9 @@ export const DriveDetails: React.FC<{
     <div className="flex flex-col gap-5 pb-4">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex gap-1.5">
-            <Badge variant="drive">Planting drive</Badge>
+          <div className="flex flex-wrap gap-1.5">
+            <DriveTypeBadge type={drive.type} />
+            {showVisibility && <DriveVisibilityBadge visibility={drive.visibility} />}
             {!isUpcoming(drive) && <Badge variant="outline">Past</Badge>}
           </div>
           <h2 className="text-xl leading-tight">{drive.title}</h2>

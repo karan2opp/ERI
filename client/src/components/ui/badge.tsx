@@ -2,13 +2,14 @@ import * as React from 'react';
 import { Droplet } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
-type Variant = 'healthy' | 'thirsty' | 'water' | 'drive' | 'secondary' | 'outline' | 'primary';
+type Variant = 'healthy' | 'thirsty' | 'water' | 'drive' | 'cleanup' | 'secondary' | 'outline' | 'primary';
 
 const VARIANT: Record<Variant, string> = {
   healthy: 'bg-leaf/15 text-leaf',
   thirsty: 'bg-thirsty/12 text-thirsty',
   water: 'bg-water/15 text-water',
   drive: 'bg-bark/15 text-bark',
+  cleanup: 'bg-cleanup/15 text-cleanup',
   secondary: 'bg-secondary text-secondary-foreground',
   outline: 'border border-border text-muted-foreground',
   primary: 'bg-primary text-primary-foreground',
