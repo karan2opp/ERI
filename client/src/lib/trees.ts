@@ -1,16 +1,18 @@
 import type { Tree } from '../types';
 
-/** A tree needs water once it has gone this long without care. */
-export const THIRSTY_AFTER_HOURS = 48;
+/** Days between waterings, unless the tree sets its own. */
+export const DEFAULT_WATER_EVERY_DAYS = 7;
 
 export type TreeStatus = 'healthy' | 'thirsty';
 
 export const hoursSinceWatered = (tree: Pick<Tree, 'lastWateredAt'>): number | null =>
   tree.lastWateredAt ? (Date.now() - new Date(tree.lastWateredAt).getTime()) / 3_600_000 : null;
 
-export const treeStatus = (tree: Pick<Tree, 'lastWateredAt'>): TreeStatus => {
+/** A tree needs water once it has gone longer than its own watering interval without it. */
+export const treeStatus = (tree: Pick<Tree, 'lastWateredAt'> & { waterEveryDays?: number }): TreeStatus => {
   const hours = hoursSinceWatered(tree);
-  return hours === null || hours > THIRSTY_AFTER_HOURS ? 'thirsty' : 'healthy';
+  const limitHours = (tree.waterEveryDays ?? DEFAULT_WATER_EVERY_DAYS) * 24;
+  return hours === null || hours > limitHours ? 'thirsty' : 'healthy';
 };
 
 export const STATUS_LABEL: Record<TreeStatus, string> = {
@@ -33,12 +35,13 @@ export const timeAgo = (iso: string): string => {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-export const CARE_ACTIONS = ['WATERED', 'FERTILIZED', 'PRUNED', 'INSPECTED'] as const;
+export const CARE_ACTIONS = ['WATERED', 'FERTILIZED', 'WEEDED', 'PRUNED', 'INSPECTED'] as const;
 export type CareAction = (typeof CARE_ACTIONS)[number];
 
 export const CARE_LABEL: Record<CareAction, string> = {
   WATERED: 'Watered',
-  FERTILIZED: 'Fed',
+  FERTILIZED: 'Fertilised',
+  WEEDED: 'Grass removed',
   PRUNED: 'Pruned',
   INSPECTED: 'Checked',
 };

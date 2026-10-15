@@ -73,6 +73,6 @@ export function useThemeColors() {
   return useMemo(() => {
     const css = getComputedStyle(document.documentElement);
     const v = (name: string) => css.getPropertyValue(name).trim();
-    return { primary: v('--primary'), leaf: v('--leaf'), background: v('--background'), water: v('--water'), foreground: v('--foreground') };
+    return { primary: v('--primary'), leaf: v('--leaf'), background: v('--background'), water: v('--water'), foreground: v('--foreground'), you: v('--you') };
   }, [dark]);
 }

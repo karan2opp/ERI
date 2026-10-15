@@ -8,6 +8,7 @@ import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
+import { CareScheduleFields, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
 export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: () => void }> = ({ tree, onClose, onSaved }) => {
   const [photo, setPhoto] = useState<File | null>(null);
@@ -19,6 +20,11 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
   const [plantedDate, setPlantedDate] = useState(() => toLocalParts(new Date(tree.plantedAt)).date);
   const [plantedTime, setPlantedTime] = useState(() => toLocalParts(new Date(tree.plantedAt)).time);
   const plantedAt = fromLocalParts(plantedDate, plantedTime);
+  const [schedule, setSchedule] = useState({
+    water: String(tree.waterEveryDays),
+    fertilize: String(tree.fertilizeEveryDays),
+    weed: String(tree.weedEveryDays),
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +36,9 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
         ? 'Choose when it was planted'
         : plantedAt.getTime() > Date.now() + 5 * 60 * 1000
           ? "Planting time can't be in the future"
-          : null;
+          : !scheduleValid(schedule)
+            ? 'Care intervals must be 1 to 365 days'
+            : null;
 
   const submit = async () => {
     if (blocker) return;
@@ -44,6 +52,9 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       form.append('description', description.trim());
       form.append('healthScore', String(health));
       if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
+      form.append('waterEveryDays', String(parseDays(schedule.water)));
+      form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
+      form.append('weedEveryDays', String(parseDays(schedule.weed)));
       if (photo) form.append('photo', photo);
       await updateTree(tree.id, form);
       onSaved();
@@ -79,6 +90,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
         <Input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
       </Field>
       <PlantedAtField date={plantedDate} time={plantedTime} onDate={setPlantedDate} onTime={setPlantedTime} />
+      <CareScheduleFields value={schedule} onChange={setSchedule} />
       <Field label={`Health: ${health}%`} htmlFor="edit-health" description="How the tree looks today: leaves, bark, new growth.">
         <input
           id="edit-health"

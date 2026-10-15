@@ -70,9 +70,22 @@ npm run dev
 ## 🔐 Authentication & Admins
 
 - **Clerk is the only way to sign in.** The API identifies users exclusively from the verified Clerk session token; headers like `x-user-id` are ignored. Without `CLERK_*` keys every protected route returns 401.
-- **Admin role lives in the database.** Promote a user manually after they have signed in once:
+- **Three roles, stored in the database** (`users.role`) and checked by the server on every request:
+
+  | Role | Can do |
+  |---|---|
+  | `USER` (default) | Plant trees, log every kind of care, see the map and trees |
+  | `TEAM_MEMBER` | Everything a user can, plus **see the planting drive schedule** (drives page, map pins, shared drive links, live walks) |
+  | `ADMIN` | Everything a team member can, plus the Admin area: users, trees, scheduling drives, and changing people's roles |
+
+- **Changing roles:** admins use **Admin → Users** and pick a role for each person (you can't change your own, so there is always an admin). The first admin has to be set once in the database:
   ```sql
   UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com';
   ```
-- Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require the `ADMIN` role.
+- **Phone numbers:** anyone can add an optional phone number on their Account page. It is **not verified** (no code is sent) and is only visible to the person and to admins; it never appears in public tree, care or drive data. Admins can open any user's profile from **Admin → Users** (details, phone, role, trees planted, care activity) and search users by name, email or phone.
+- Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require `ADMIN`. Reading drives (`GET /api/v1/drives…`) requires `TEAM_MEMBER` or `ADMIN`.
+
+## 🌱 Care schedules
+
+Each tree has three schedules, set when it is planted and editable later: **water every N days** (default 7), **fertilise every N days** (default 60) and **remove the grass every N days** (default 30). A tree "needs water" once it is past its own watering interval. Every care action (watered, fertilised, grass removed, pruned, checked) is logged with its date, time and who did it, and the tree shows when each task is next due.
 - Live location: anyone can watch a tracking room, but only signed-in sockets can broadcast, and the broadcaster's identity comes from their token.

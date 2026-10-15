@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Droplets, HeartHandshake, Scissors, Search, Sprout } from 'lucide-react';
+import { Droplets, HeartHandshake, Scissors, Search, Shovel, Sprout } from 'lucide-react';
 import type { CareLog, Tree } from '../types';
 import { formatAge, formatDateTime, treeAge, useNow } from '../lib/age';
 import { CARE_LABEL, timeAgo, type CareAction } from '../lib/trees';
 import { fetchCareHistory } from '../services/api';
+import { careDue, dueText, everyText, type TaskKind } from '../lib/schedule';
 import { Button } from './ui/button';
 import { cn } from '../lib/cn';
 
 export const CARE_ICON: Record<CareAction, React.ReactNode> = {
   WATERED: <Droplets className="text-water" aria-hidden="true" />,
   FERTILIZED: <Sprout className="text-leaf" aria-hidden="true" />,
+  WEEDED: <Shovel className="text-bark" aria-hidden="true" />,
   PRUNED: <Scissors className="text-bark" aria-hidden="true" />,
   INSPECTED: <Search className="text-muted-foreground" aria-hidden="true" />,
 };
@@ -79,6 +81,42 @@ export const CareSummary: React.FC<{ tree: Tree; history: CareLog[] | null }> = 
         detail={lastCare ? CARE_LABEL[lastCare.actionType] ?? lastCare.actionType : undefined}
       />
     </div>
+  );
+};
+
+const TASK_ICON: Record<TaskKind, React.ReactNode> = {
+  water: <Droplets className="text-water" aria-hidden="true" />,
+  fertilize: <Sprout className="text-leaf" aria-hidden="true" />,
+  weed: <Shovel className="text-bark" aria-hidden="true" />,
+};
+
+/**
+ * The tree's care schedule: for each recurring task (water, fertilise, remove grass) how often it's
+ * needed, when it was last done, and when it's next due (or how overdue it is).
+ */
+export const CareSchedule: React.FC<{ tree: Tree }> = ({ tree }) => {
+  useNow(); // keep "due in N days" fresh
+  const tasks = careDue(tree);
+  return (
+    <section className="flex flex-col gap-2" aria-labelledby={`care-schedule-${tree.id}`}>
+      <h3 id={`care-schedule-${tree.id}`} className="text-lg">Care schedule</h3>
+      <ul className="flex flex-col divide-y divide-border rounded-2xl bg-muted">
+        {tasks.map((t) => (
+          <li key={t.kind} className="flex items-center gap-3 px-4 py-3">
+            <span className="shrink-0 [&>svg]:size-5">{TASK_ICON[t.kind]}</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{t.label}</p>
+              <p className="text-sm text-muted-foreground">
+                {everyText(t.everyDays)} · {t.lastDoneAt ? `last done ${timeAgo(t.lastDoneAt)}` : 'not done yet'}
+              </p>
+            </div>
+            <p className={cn('shrink-0 text-right text-[15px] font-medium', t.overdue ? 'text-destructive' : t.daysUntil <= 1 ? 'text-foreground' : 'text-muted-foreground')}>
+              {dueText(t)}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 };
 

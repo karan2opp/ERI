@@ -14,7 +14,7 @@ import { Alert } from './ui/alert';
 import { Spinner } from './ui/spinner';
 import { Pager } from './ui/pager';
 import { ExpandableText } from './ui/expandable-text';
-import { CareSummary, CareTimeline, TreeAge, useCareHistory } from './TreeLife';
+import { CareSchedule, CareSummary, CareTimeline, TreeAge, useCareHistory } from './TreeLife';
 
 type Status = 'all' | 'thirsty' | 'healthy';
 
@@ -35,7 +35,7 @@ const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { d
 const dayLabel = (day: string) => new Date(`${day}T00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** One tree's full record for admins: details, age from planting, last watered/cared and every care entry. */
-const TreeHistoryPage: React.FC<{ treeId: string; onClose: () => void; onShowOnMap: (tree: Tree) => void }> = ({ treeId, onClose, onShowOnMap }) => {
+export const TreeHistoryPage: React.FC<{ treeId: string; onClose: () => void; onShowOnMap: (tree: Tree) => void }> = ({ treeId, onClose, onShowOnMap }) => {
   const [tree, setTree] = useState<(Tree & { careLogs?: CareLog[] }) | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -85,6 +85,7 @@ const TreeHistoryPage: React.FC<{ treeId: string; onClose: () => void; onShowOnM
 
           <TreeAge plantedAt={tree.plantedAt} />
           <CareSummary tree={tree} history={history} />
+          <CareSchedule tree={tree} />
 
           <dl className="grid gap-3 text-[15px] sm:grid-cols-2">
             <div>

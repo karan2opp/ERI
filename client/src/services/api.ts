@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Tree, CareLog, User, Drive } from '../types';
+import type { Tree, CareLog, User, Drive, Role } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -126,6 +126,42 @@ export const fetchAdminStats = async () => {
   return res.data;
 };
 
+/** Admin: change someone's role (USER, TEAM_MEMBER or ADMIN). */
+export const setUserRole = async (userId: string, role: Role): Promise<User> => {
+  const res = await api.patch(`/admin/users/${userId}/role`, { role });
+  return res.data.data;
+};
+
+/** Save or remove (empty) your own phone number. It isn't verified. */
+export const updateMyPhone = async (phone: string): Promise<User> => {
+  const res = await api.put('/users/me/phone', { phone: phone.trim() || null });
+  return res.data.data;
+};
+
+export interface AdminUserProfile {
+  user: User & { createdAt: string; updatedAt: string };
+  stats: {
+    treesPlanted: number;
+    careTotal: number;
+    careByType: Record<string, number>;
+    lastActiveAt: string | null;
+  };
+}
+
+/** Admin: one user's details and a summary of what they've done. */
+export const fetchAdminUser = async (userId: string): Promise<AdminUserProfile> => {
+  const res = await api.get(`/admin/users/${encodeURIComponent(userId)}`);
+  return res.data.data;
+};
+
+export type AdminCareEntry = CareLog & { treeName: string; treeId: string };
+
+/** Admin: a user's care actions, newest first, 10 at a time. */
+export const fetchAdminUserCare = async (userId: string, page = 1, limit = 10): Promise<Paged<AdminCareEntry>> => {
+  const res = await api.get(`/admin/users/${encodeURIComponent(userId)}/care`, { params: { page, limit } });
+  return res.data;
+};
+
 export const fetchAdminUsers = async (page: number = 1, limit: number = 10, search: string = '') => {
   const res = await api.get(`/admin/users?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`);
   return res.data;
@@ -146,6 +182,8 @@ export const fetchAdminTrees = async (params: {
   from?: string; // YYYY-MM-DD
   to?: string; // YYYY-MM-DD
   status?: 'all' | 'thirsty' | 'healthy';
+  /** Only trees planted by this user */
+  userId?: string;
 }): Promise<{ data: Tree[]; total: number; page: number; totalPages: number }> => {
   const startOf = (day: string) => new Date(`${day}T00:00`).toISOString();
   const endOf = (day: string) => {
@@ -162,6 +200,7 @@ export const fetchAdminTrees = async (params: {
       ...(params.from ? { from: startOf(params.from) } : {}),
       ...(params.to ? { to: endOf(params.to) } : {}),
       status: params.status ?? 'all',
+      ...(params.userId ? { userId: params.userId } : {}),
     },
   });
   return res.data;

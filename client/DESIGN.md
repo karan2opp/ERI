@@ -20,6 +20,7 @@ Defined in `src/index.css` as CSS variables and exposed to Tailwind via `@theme 
 | `warning` | `#e09a1c` amber | `#f0b13e` | Low health on the health bar |
 | `water` | `#2f7fb8` | `#6ab0e3` | Water actions, people walking live |
 | `bark` | `#7a5638` | `#c49a6c` | Planting drives |
+| `you` | `#e53935` red | `#ff6b66` | Your own location on the map: a red dot with a white ring, pulse, accuracy circle and a direction cone. Nothing else on the map is red, so you never mistake yourself for a tree |
 | `destructive` | `#c63d21` rust | `#f0714f` | Remove, End, errors |
 
 Shadows: `shadow-float` for floating pills and buttons, `shadow-sheet` for sheets and cards over the map. Nothing else gets a shadow. No gradients.

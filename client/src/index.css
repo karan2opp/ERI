@@ -41,6 +41,7 @@
   --thirsty-foreground: #ffffff;
   --warning: #e09a1c;
   --water: #2f7fb8;
+  --you: #e53935;
   --bark: #7a5638;
   --map: #eef2ea;
   --elev-float: 0 2px 8px rgb(19 60 22 / 0.14);
@@ -69,6 +70,7 @@
   --thirsty: #6ab0e3;
   --warning: #f0b13e;
   --water: #6ab0e3;
+  --you: #ff6b66;
   --bark: #c49a6c;
   --map: #17231c;
   --elev-float: 0 2px 8px rgb(0 0 0 / 0.6);
@@ -228,33 +230,43 @@
   stroke: var(--foreground);
 }
 
-/* You: a dark green dot with a soft halo */
+/* You: a red dot with a white ring, a pulse, and a cone pointing where you face. Red is used for
+   nothing else on the map (trees are green or blue drops, drives are brown), so you never mistake
+   yourself for a tree. */
 .pt-you {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 72px;
+  height: 72px;
   display: grid;
   place-items: center;
   pointer-events: none;
 }
-.pt-you::before {
-  content: "";
+.pt-you-pulse {
   position: absolute;
-  inset: 0;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 15%, transparent);
+  background: color-mix(in srgb, var(--you) 38%, transparent);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .pt-you::before { animation: pt-halo 2s ease-out infinite; }
+  .pt-you-pulse { animation: pt-you-pulse 2.2s ease-out infinite; }
 }
-.pt-you span {
+/* The direction cone: a wedge fading out from the dot, turned by --heading (0 = north, clockwise) */
+.pt-you-cone {
+  position: absolute;
+  inset: -16px;
+  background: conic-gradient(from calc(var(--heading) - 34deg), color-mix(in srgb, var(--you) 70%, transparent) 0deg 68deg, transparent 68deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 14%, #000 17%, transparent 68%);
+  mask-image: radial-gradient(circle, transparent 14%, #000 17%, transparent 68%);
+}
+.pt-you-dot {
   position: relative;
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
-  background: var(--foreground);
-  border: 3px solid var(--background);
-  box-shadow: var(--elev-float);
+  background: var(--you);
+  border: 3.5px solid #fff;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.4);
 }
 
 /* Someone walking live */
@@ -270,9 +282,9 @@
   color: #fff;
 }
 
-@keyframes pt-halo {
-  0% { transform: scale(0.6); opacity: 0.9; }
-  100% { transform: scale(1.4); opacity: 0; }
+@keyframes pt-you-pulse {
+  0% { transform: scale(0.7); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
 }
 
 @keyframes pt-rise {

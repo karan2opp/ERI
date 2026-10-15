@@ -4,6 +4,7 @@ import { db } from '../../common/db';
 import { trees, careLogs, users } from '../../common/db/schema';
 import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { getAuth } from '@clerk/express';
+import { needsWater } from '../../common/utils/careSchedule';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
@@ -13,6 +14,13 @@ const plantedAtSchema = z.coerce
   .date()
   .refine((d) => d.getTime() <= Date.now() + 5 * 60 * 1000, 'Planting date cannot be in the future')
   .refine((d) => d.getFullYear() >= 1900, 'Planting date is too far in the past');
+
+// How many days between each care task: at least daily, at most yearly
+const intervalDays = z.coerce
+  .number({ invalid_type_error: 'Must be a number of days' })
+  .int('Must be a whole number of days')
+  .min(1, 'Must be at least 1 day')
+  .max(365, 'Must be at most 365 days');
 
 // Within this long of planting, adding the tree counts as its first watering
 const JUST_PLANTED_MS = 24 * 60 * 60 * 1000;
@@ -25,6 +33,10 @@ const createTreeSchema = z.object({
   latitude: latitudeSchema,
   longitude: longitudeSchema,
   plantedAt: plantedAtSchema.optional(),
+  // How often it needs each kind of care (defaults: water 7, fertilise 60, remove grass 30 days)
+  waterEveryDays: intervalDays.optional(),
+  fertilizeEveryDays: intervalDays.optional(),
+  weedEveryDays: intervalDays.optional(),
 });
 
 const updateTreeSchema = z.object({
@@ -34,6 +46,9 @@ const updateTreeSchema = z.object({
   address: z.string().trim().max(500).optional(),
   healthScore: z.coerce.number().int().min(0).max(100).optional(),
   plantedAt: plantedAtSchema.optional(),
+  waterEveryDays: intervalDays.optional(),
+  fertilizeEveryDays: intervalDays.optional(),
+  weedEveryDays: intervalDays.optional(),
 });
 
 const validationError = (error: z.ZodError) =>
@@ -166,6 +181,9 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       address: address || '',
       userId,
       plantedAt,
+      waterEveryDays: parsed.data.waterEveryDays,
+      fertilizeEveryDays: parsed.data.fertilizeEveryDays,
+      weedEveryDays: parsed.data.weedEveryDays,
       lastWateredAt: justPlanted ? plantedAt : null,
       lastCaredAt: justPlanted ? plantedAt : now,
       healthScore: 100
@@ -251,6 +269,9 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
         address: address !== undefined ? address : existingTree.address,
         healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
         plantedAt: plantedAt ?? existingTree.plantedAt,
+        waterEveryDays: parsed.data.waterEveryDays ?? existingTree.waterEveryDays,
+        fertilizeEveryDays: parsed.data.fertilizeEveryDays ?? existingTree.fertilizeEveryDays,
+        weedEveryDays: parsed.data.weedEveryDays ?? existingTree.weedEveryDays,
         photoUrl,
         photoPublicId,
         updatedAt: new Date()
@@ -318,8 +339,6 @@ export const deleteTree = async (req: AuthenticatedRequest, res: Response) => {
 
 // ---------- Paged tree lists ----------
 
-// A tree needs water once it has gone this long without watering (same rule as the app)
-const THIRSTY_AFTER_MS = 48 * 60 * 60 * 1000;
 const likePattern = (search: string) => `%${search.replace(/[\\%_]/g, '\\$&')}%`;
 
 const browseQuery = z.object({
@@ -366,8 +385,8 @@ export const browseTrees = async (req: Request, res: Response) => {
 
   try {
     const distance = here ? distanceFrom(lat, lng) : null;
-    const thirstyBefore = new Date(Date.now() - THIRSTY_AFTER_MS);
-    const isThirsty = or(isNull(trees.lastWateredAt), lt(trees.lastWateredAt, thirstyBefore))!;
+    // Each tree is judged against its own watering interval
+    const isThirsty = needsWater;
 
     const base: SQL[] = [];
     if (userId) base.push(eq(trees.userId, userId));
@@ -376,7 +395,7 @@ export const browseTrees = async (req: Request, res: Response) => {
 
     const filters = [...base];
     if (status === 'thirsty') filters.push(isThirsty);
-    if (status === 'healthy') filters.push(gte(trees.lastWateredAt, thirstyBefore));
+    if (status === 'healthy') filters.push(sql`NOT ${needsWater}`);
     const where = filters.length ? and(...filters) : undefined;
 
     const order =

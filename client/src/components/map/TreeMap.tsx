@@ -49,7 +49,30 @@ const pinIcon = (status: TreeStatus | 'drive', selected: boolean, label: string)
   return icon;
 };
 
-const youIcon = L.divIcon({ html: '<div class="pt-you" aria-label="Your location"><span></span></div>', className: 'pt-marker', iconSize: [40, 40], iconAnchor: [20, 20] });
+/**
+ * You: a red dot with a white ring and a pulse, and (when we know which way you face) a cone that
+ * points that way. The icon is rebuilt only when the heading moves by a few degrees.
+ */
+const youIconCache = new Map<number, L.DivIcon>();
+const youIcon = (heading: number | null) => {
+  const key = heading === null ? -1 : Math.round(heading / 5) * 5;
+  let icon = youIconCache.get(key);
+  if (!icon) {
+    const cone = key >= 0 ? `<span class="pt-you-cone" style="--heading:${key}deg"></span>` : '';
+    icon = L.divIcon({
+      html: `<div class="pt-you" role="img" aria-label="Your location"><span class="pt-you-pulse"></span>${cone}<span class="pt-you-dot"></span></div>`,
+      className: 'pt-marker',
+      iconSize: [72, 72],
+      iconAnchor: [36, 36],
+    });
+    youIconCache.set(key, icon);
+  }
+  return icon;
+};
+
+// Show the accuracy circle only when it's wide enough to mean something and not absurdly wide
+const MIN_ACCURACY_CIRCLE_M = 15;
+const MAX_ACCURACY_CIRCLE_M = 1500;
 
 
 const isPhone = () => window.innerWidth < 768;
@@ -135,6 +158,10 @@ export interface TreeMapProps {
   selectedDriveId: string | null;
   onSelectDrive: (drive: Drive) => void;
   userLocation: LatLng | null;
+  /** How precisely the phone knows where you are, in metres */
+  userAccuracy?: number | null;
+  /** Which way you're facing or moving, degrees clockwise from north */
+  userHeading?: number | null;
   radiusMeters: number | null;
   route: [number, number][] | null;
   flyTo: FlyToTarget | null;
@@ -156,6 +183,8 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   selectedDriveId,
   onSelectDrive,
   userLocation,
+  userAccuracy = null,
+  userHeading = null,
   radiusMeters,
   route,
   flyTo,
@@ -221,7 +250,16 @@ export const TreeMap: React.FC<TreeMapProps> = ({
         {liveRoom && <LiveMapOverlay room={liveRoom} />}
 
         {/* You draw above the pins but let taps through to the pin underneath */}
-        {userLocation && <Marker position={[userLocation.lat, userLocation.lng]} icon={youIcon} interactive={false} zIndexOffset={1000} />}
+        {/* How sure the phone is of where you are: a soft circle that shrinks as the GPS settles */}
+        {userLocation && userAccuracy !== null && userAccuracy >= MIN_ACCURACY_CIRCLE_M && userAccuracy <= MAX_ACCURACY_CIRCLE_M && (
+          <Circle
+            center={[userLocation.lat, userLocation.lng]}
+            radius={userAccuracy}
+            interactive={false}
+            pathOptions={{ color: colors.you, weight: 1, opacity: 0.5, fillColor: colors.you, fillOpacity: 0.14 }}
+          />
+        )}
+        {userLocation && <Marker position={[userLocation.lat, userLocation.lng]} icon={youIcon(userHeading)} interactive={false} zIndexOffset={1000} />}
       </MapContainer>
       {/* On wider screens the credit sits beside the side panel; on phones the sheet carries it */}
       {tiles?.google && <GoogleCredit dark={dark} className="fixed bottom-2 left-[26.5rem] z-[500] max-md:hidden" />}

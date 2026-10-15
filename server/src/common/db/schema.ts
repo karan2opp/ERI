@@ -6,8 +6,11 @@ export const users = pgTable('users', {
   id: varchar('id', { length: 255 }).primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   name: varchar('name', { length: 255 }),
+  // USER (default), TEAM_MEMBER or ADMIN
   role: varchar('role', { length: 20 }).default('USER').notNull(),
   avatarUrl: text('avatar_url'),
+  // Optional phone number in international form (+919876543210). Not verified; only the person and admins can see it.
+  phone: varchar('phone', { length: 20 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -28,8 +31,15 @@ export const trees = pgTable('trees', {
   plantedAt: timestamp('planted_at').defaultNow().notNull(),
   // Last WATERED care log
   lastWateredAt: timestamp('last_watered_at'),
-  // Last care of any kind (watered, fed, pruned, checked)
+  // Last care of any kind (watered, fed, pruned, checked, grass removed)
   lastCaredAt: timestamp('last_cared_at'),
+  // Last time it was fertilised, and last time the grass around it was removed
+  lastFertilizedAt: timestamp('last_fertilized_at'),
+  lastWeededAt: timestamp('last_weeded_at'),
+  // Care schedule: how many days between each task (set when planting, editable later)
+  waterEveryDays: integer('water_every_days').default(7).notNull(),
+  fertilizeEveryDays: integer('fertilize_every_days').default(60).notNull(),
+  weedEveryDays: integer('weed_every_days').default(30).notNull(),
   userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

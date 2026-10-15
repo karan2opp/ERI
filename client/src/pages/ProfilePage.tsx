@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
 import { Camera, KeyRound, LogOut, Mail } from 'lucide-react';
-import type { Tree } from '../types';
+import type { Role, Tree } from '../types';
+import { ROLE_LABEL } from '../lib/roles';
+import { PhoneSection } from '../components/PhoneSection';
 import { syncCurrentUser } from '../services/api';
 import { treeStatus } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
@@ -24,8 +26,17 @@ const clerkMessage = (err: unknown, fallback: string) =>
  * Your account, edited right here: photo, name and password. (Clerk still handles signing in and
  * stores these details; this page talks to it directly instead of opening Clerk's own popup.)
  */
-export const ProfilePage: React.FC<{ role: 'USER' | 'ADMIN'; myTrees: Tree[]; onClose: () => void; onProfileChanged: () => void }> = ({
+export const ProfilePage: React.FC<{
+  role: Role;
+  phone: string | null;
+  onPhoneChanged: (phone: string | null) => void;
+  myTrees: Tree[];
+  onClose: () => void;
+  onProfileChanged: () => void;
+}> = ({
   role,
+  phone,
+  onPhoneChanged,
   myTrees,
   onClose,
   onProfileChanged,
@@ -157,7 +168,7 @@ export const ProfilePage: React.FC<{ role: 'USER' | 'ADMIN'; myTrees: Tree[]; on
         <div className="min-w-0">
           <h2 className="truncate text-2xl">{user.fullName || user.username || 'You'}</h2>
           <p className="truncate text-muted-foreground">{user.primaryEmailAddress?.emailAddress}</p>
-          {role === 'ADMIN' && <Badge variant="primary" className="mt-1">Admin</Badge>}
+          {role !== 'USER' && <Badge variant="primary" className="mt-1">{ROLE_LABEL[role]}</Badge>}
         </div>
       </section>
       {photoNotice && <Alert tone={photoNotice.tone}>{photoNotice.text}</Alert>}
@@ -183,6 +194,9 @@ export const ProfilePage: React.FC<{ role: 'USER' | 'ADMIN'; myTrees: Tree[]; on
           {savingName && <Spinner className="size-4" />} Save name
         </Button>
       </form>
+
+      {/* Phone number (optional, not verified) */}
+      <PhoneSection phone={phone} onSaved={onPhoneChanged} />
 
       {/* Email and sign-in methods (read-only) */}
       <section className="flex flex-col gap-3" aria-labelledby="email-heading">

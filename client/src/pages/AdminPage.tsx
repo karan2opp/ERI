@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import type { Drive, LatLng, Tree, User } from '../types';
 import { createGlobalDrive, fetchAdminStats, fetchAdminUsers } from '../services/api';
+import { useUser } from '@clerk/react';
+import { formatPhone } from '../lib/phone';
+import { RoleSelect } from '../components/RoleSelect';
+import { AdminUserProfile } from '../components/AdminUserProfile';
 import { geocodeLocation } from '../utils/geo';
 import { timeAgo } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
-import { Badge } from '../components/ui/badge';
 import { Chips } from '../components/ui/chips';
 import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
@@ -87,11 +90,45 @@ const Overview: React.FC = () => {
   );
 };
 
-const UsersList: React.FC = () => {
+/** One user: tap the person to open their profile, or use the role picker on the right. */
+const UserRow: React.FC<{ user: User & { createdAt: string }; isSelf: boolean; onOpen: () => void }> = ({ user, isSelf, onOpen }) => {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <li className="flex items-center gap-3 py-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-xl py-1 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Open the profile of ${user.name || user.email}`}
+      >
+        <img src={user.avatarUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${user.id}`} alt="" className="size-11 shrink-0 rounded-full bg-muted" loading="lazy" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium">
+            {user.name || 'No name'}
+            {isSelf && <span className="ml-2 font-normal text-muted-foreground">(you)</span>}
+          </span>
+          <span className="block truncate text-sm text-muted-foreground">{user.email}</span>
+          <span className="block truncate text-sm text-muted-foreground">
+            {user.phone ? formatPhone(user.phone) : 'No phone number'}
+            <span className="max-sm:hidden"> · joined {timeAgo(user.createdAt)}</span>
+          </span>
+        </span>
+      </button>
+      <div className="shrink-0">
+        <RoleSelect user={user} isSelf={isSelf} onError={setError} />
+      </div>
+      {error && <p role="alert" className="basis-full pl-14 text-sm text-destructive">{error}</p>}
+    </li>
+  );
+};
+
+const UsersList: React.FC<{ onShowTreeOnMap: (t: Tree) => void }> = ({ onShowTreeOnMap }) => {
   const list = usePagedList<User & { createdAt: string }>(fetchAdminUsers, USERS_PER_PAGE);
+  const { user: me } = useUser();
+  const [openUserId, setOpenUserId] = useState<string | null>(null);
   return (
     <div className="flex flex-col gap-4">
-      <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search users by name or email" />
+      <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search users by name, email or phone" />
       {list.error && <Alert tone="error">Couldn't load users. Refresh to try again.</Alert>}
       {!list.data ? (
         <Spinner />
@@ -103,14 +140,7 @@ const UsersList: React.FC = () => {
           </p>
           <ul className="divide-y divide-border">
             {list.data.rows.map((u) => (
-              <li key={u.id} className="flex items-center gap-4 py-3">
-                <img src={u.avatarUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${u.id}`} alt="" className="size-11 shrink-0 rounded-full bg-muted" loading="lazy" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{u.name || 'No name'}</p>
-                  <p className="truncate text-sm text-muted-foreground">{u.email} · joined {timeAgo(u.createdAt)}</p>
-                </div>
-                {u.role === 'ADMIN' && <Badge variant="primary">Admin</Badge>}
-              </li>
+              <UserRow key={u.id} user={u} isSelf={u.id === me?.id} onOpen={() => setOpenUserId(u.id)} />
             ))}
           </ul>
           {list.data.rows.length === 0 && <p className="py-4 text-center text-muted-foreground">No users match that search.</p>}
@@ -125,6 +155,7 @@ const UsersList: React.FC = () => {
           />
         </>
       )}
+      {openUserId && <AdminUserProfile userId={openUserId} isSelf={openUserId === me?.id} onClose={() => setOpenUserId(null)} onShowTreeOnMap={onShowTreeOnMap} />}
     </div>
   );
 };
@@ -264,7 +295,7 @@ export const AdminPage: React.FC<{
           />
         )}
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
-        {tab === 'users' && <UsersList />}
+        {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
       </Page>
 
       {drive && (

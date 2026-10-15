@@ -42,7 +42,7 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       photoPublicId = upload.publicId;
     }
 
-    const validActionType = typeof actionType === 'string' && ['WATERED', 'FERTILIZED', 'PRUNED', 'INSPECTED'].includes(actionType.toUpperCase())
+    const validActionType = typeof actionType === 'string' && ['WATERED', 'FERTILIZED', 'PRUNED', 'INSPECTED', 'WEEDED'].includes(actionType.toUpperCase())
       ? actionType.toUpperCase()
       : 'WATERED';
 
@@ -67,6 +67,8 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       .set({
         // Only watering counts as watering; every kind of care counts as care
         ...(watered ? { lastWateredAt: now } : {}),
+        ...(validActionType === 'FERTILIZED' ? { lastFertilizedAt: now } : {}),
+        ...(validActionType === 'WEEDED' ? { lastWeededAt: now } : {}),
         lastCaredAt: now,
         healthScore: bonusEligible ? Math.min(100, (tree.healthScore || 80) + 10) : tree.healthScore,
         updatedAt: now

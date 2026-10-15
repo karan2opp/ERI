@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
 import { Calendar, CheckCircle2, LocateFixed, Plus } from 'lucide-react';
-import type { Drive, LatLng, Tree } from './types';
+import type { Drive, LatLng, Role, Tree } from './types';
 import { fetchAllTrees, fetchGlobalDrives, setAuthTokenGetter, syncCurrentUser } from './services/api';
 import { reconnectSocket } from './utils/socket';
 import { formatDistance, formatMinutes, getDistanceInMeters } from './utils/geo';
 import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
 import { sampleTreesAround } from './lib/demo';
 import { useWalkingRoute } from './lib/route';
+import { useHeading } from './lib/heading';
+import { asRole, canSeeDrives } from './lib/roles';
 import { formatDriveDate, isUpcoming, splitDrives } from './lib/drives';
 import { cn } from './lib/cn';
 import { useIsDark } from './lib/theme';
@@ -90,9 +92,17 @@ function MapApp() {
   const { user: clerkUser } = useUser();
   const { screen, open, replace, back } = useScreens();
 
-  const [role, setRole] = useState<'USER' | 'ADMIN'>('USER');
+  const [role, setRole] = useState<Role>('USER');
+  // Your own phone number (optional, not verified)
+  const [phone, setPhone] = useState<string | null>(null);
+  // Planting drives are for team members and admins only
+  const seesDrives = canSeeDrives(role);
   const [serverTrees, setServerTrees] = useState<Tree[] | null>(null);
   const [you, setYou] = useState<LatLng | null>(null);
+  // How sure the phone is of where you are (metres), and the direction you're moving (GPS only reports it while moving)
+  const [youAccuracy, setYouAccuracy] = useState<number | null>(null);
+  const [gpsHeading, setGpsHeading] = useState<number | null>(null);
+  const youHeading = useHeading(gpsHeading);
   const [locError, setLocError] = useState<string | null>(null);
   const [start] = useState<LatLng | null>(readLastLocation);
   const [flyTo, setFlyTo] = useState<FlyToTarget | null>(null);
@@ -123,11 +133,16 @@ function MapApp() {
     reconnectSocket();
     if (!isSignedIn) {
       setRole('USER');
+      setPhone(null);
       return;
     }
     let cancelled = false;
     syncCurrentUser()
-      .then((u) => !cancelled && setRole(u.role === 'ADMIN' ? 'ADMIN' : 'USER'))
+      .then((u) => {
+        if (cancelled) return;
+        setRole(asRole(u.role));
+        setPhone(u.phone ?? null);
+      })
       .catch((err) => console.warn('User sync notice:', err));
     return () => {
       cancelled = true;
@@ -147,6 +162,9 @@ function MapApp() {
       (pos) => {
         const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setYou(at);
+        setYouAccuracy(pos.coords.accuracy);
+        // Standing still, GPS reports no direction: keep the last one instead of dropping the cone
+        if (pos.coords.heading !== null && Number.isFinite(pos.coords.heading)) setGpsHeading(pos.coords.heading);
         setLocError(null);
         try {
           localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(at));
@@ -173,6 +191,7 @@ function MapApp() {
       (pos) => {
         const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setYou(at);
+        setYouAccuracy(pos.coords.accuracy);
         setLocError(null);
         setFlyTo({ ...at, zoom: 16, timestamp: Date.now() });
       },
@@ -200,8 +219,13 @@ function MapApp() {
     );
   }, []);
   useEffect(() => {
+    if (!seesDrives) {
+      // Normal users and signed-out visitors never load, pin or see drives
+      setDrives(null);
+      return;
+    }
     if (screen === 'map') loadDrives();
-  }, [screen, loadDrives]);
+  }, [screen, loadDrives, seesDrives]);
 
   // Sample trees only while the map would otherwise be empty
   const sampleCenter = you ?? start;
@@ -436,6 +460,8 @@ function MapApp() {
         selectedDriveId={selectedDrive?.id ?? null}
         onSelectDrive={showDrive}
         userLocation={you}
+        userAccuracy={youAccuracy}
+        userHeading={youHeading}
         radiusMeters={distance === 'ALL' ? null : Number(distance)}
         route={destination ? route?.line ?? null : null}
         flyTo={flyTo}
@@ -469,7 +495,7 @@ function MapApp() {
                 </Button>
                 <div className="pointer-events-auto">
                   <ProfileDrawer
-                    isAdmin={role === 'ADMIN'}
+                    role={role}
                     treesPlanted={myTrees.length}
                     upcomingDrives={upcomingDrives}
                     onMyTrees={() => open('myTrees')}
@@ -575,9 +601,9 @@ function MapApp() {
         />
       )}
 
-      {screen === 'account' && <ProfilePage role={role} myTrees={myTrees} onClose={back} onProfileChanged={loadTrees} />}
+      {screen === 'account' && <ProfilePage role={role} phone={phone} onPhoneChanged={setPhone} myTrees={myTrees} onClose={back} onProfileChanged={loadTrees} />}
 
-      {screen === 'drives' && (
+      {screen === 'drives' && seesDrives && (
         <DrivesPage
           you={you}
           onClose={back}

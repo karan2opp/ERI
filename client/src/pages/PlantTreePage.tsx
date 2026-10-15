@@ -12,6 +12,7 @@ import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
+import { CareScheduleFields, DEFAULT_SCHEDULE, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
 const OTHER = 'OTHER';
 
@@ -34,6 +35,8 @@ export const PlantTreePage: React.FC<{
   const [plantedDate, setPlantedDate] = useState(() => toLocalParts(new Date()).date);
   const [plantedTime, setPlantedTime] = useState(() => toLocalParts(new Date()).time);
   const plantedAt = fromLocalParts(plantedDate, plantedTime);
+  // How often it needs water, fertiliser and grass removal (days)
+  const [schedule, setSchedule] = useState(DEFAULT_SCHEDULE);
   const plantedInFuture = plantedAt !== null && plantedAt.getTime() > Date.now() + 5 * 60 * 1000;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,9 @@ export const PlantTreePage: React.FC<{
       ? 'Choose when it was planted'
       : plantedInFuture
         ? "Planting time can't be in the future"
-        : !finalSpecies
+        : !scheduleValid(schedule)
+          ? 'Care intervals must be 1 to 365 days'
+          : !finalSpecies
           ? 'Choose what kind of tree it is'
           : !name.trim()
             ? 'Give it a name to continue'
@@ -77,6 +82,9 @@ export const PlantTreePage: React.FC<{
       form.append('latitude', String(location.lat));
       form.append('longitude', String(location.lng));
       if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
+      form.append('waterEveryDays', String(parseDays(schedule.water)));
+      form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
+      form.append('weedEveryDays', String(parseDays(schedule.weed)));
       if (photo) form.append('photo', photo);
       onPlanted(await createTree(form));
     } catch (err) {
@@ -143,6 +151,8 @@ export const PlantTreePage: React.FC<{
         onTime={setPlantedTime}
         description="Planting it now? Leave this as it is. Adding an older tree? Set when it was planted, and its age is counted from then."
       />
+
+      <CareScheduleFields value={schedule} onChange={setSchedule} />
 
       <Field label="Name it" htmlFor="tree-name" description="Something people can find it by, like a landmark next to it.">
         <Input id="tree-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Neem by the school gate" maxLength={255} />

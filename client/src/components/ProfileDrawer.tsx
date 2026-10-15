@@ -4,6 +4,8 @@ import { SignInButton, useAuth, useUser } from '@clerk/react';
 import { CalendarDays, ChevronRight, LogOut, Monitor, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
+import type { Role } from '../types';
+import { ROLE_LABEL, canSeeDrives } from '../lib/roles';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Chips } from './ui/chips';
@@ -32,17 +34,19 @@ const NavRow: React.FC<{ icon: React.ReactNode; label: string; hint?: string; on
 /**
  * The round profile button over the map, and the drawer it opens from the right: who you are,
  * your numbers, and every place you can go (my trees, drives, account, admin), plus theme and sign out.
- * Signed out, it offers sign-in and still links to the public drives.
+ * Planting drives show up here only for team members and admins. Signed out, it offers sign-in.
  */
 export const ProfileDrawer: React.FC<{
-  isAdmin: boolean;
+  role: Role;
   treesPlanted: number;
   upcomingDrives: number;
   onMyTrees: () => void;
   onDrives: () => void;
   onAccount: () => void;
   onAdmin: () => void;
-}> = ({ isAdmin, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin }) => {
+}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin }) => {
+  const isAdmin = role === 'ADMIN';
+  const seesDrives = canSeeDrives(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);
@@ -112,24 +116,26 @@ export const ProfileDrawer: React.FC<{
                   <div className="min-w-0">
                     <h2 className="truncate text-xl">{name}</h2>
                     <p className="truncate text-muted-foreground">{user?.primaryEmailAddress?.emailAddress}</p>
-                    {isAdmin && <Badge variant="primary" className="mt-1">Admin</Badge>}
+                    {role !== 'USER' && <Badge variant="primary" className="mt-1">{ROLE_LABEL[role]}</Badge>}
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-2 px-2">
+                <div className={cn('mt-5 grid gap-2 px-2', seesDrives ? 'grid-cols-2' : 'grid-cols-1')}>
                   <div className="rounded-2xl bg-muted p-3">
                     <p className="font-heading text-2xl font-bold tabular-nums">{treesPlanted}</p>
                     <p className="text-sm text-muted-foreground">{treesPlanted === 1 ? 'tree planted' : 'trees planted'}</p>
                   </div>
-                  <div className="rounded-2xl bg-muted p-3">
-                    <p className="font-heading text-2xl font-bold tabular-nums">{upcomingDrives}</p>
-                    <p className="text-sm text-muted-foreground">{upcomingDrives === 1 ? 'drive coming up' : 'drives coming up'}</p>
-                  </div>
+                  {seesDrives && (
+                    <div className="rounded-2xl bg-muted p-3">
+                      <p className="font-heading text-2xl font-bold tabular-nums">{upcomingDrives}</p>
+                      <p className="text-sm text-muted-foreground">{upcomingDrives === 1 ? 'drive coming up' : 'drives coming up'}</p>
+                    </div>
+                  )}
                 </div>
 
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Profile">
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
-                  <NavRow icon={<CalendarDays />} label="Planting drives" hint="Upcoming drives and the full history" onClick={go(onDrives)} />
+                  {seesDrives && <NavRow icon={<CalendarDays />} label="Planting drives" hint="Upcoming drives and the full history" onClick={go(onDrives)} />}
                   <NavRow icon={<UserRound />} label="Account" hint="Name, photo and password" onClick={go(onAccount)} />
                   {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
                 </nav>
@@ -138,14 +144,11 @@ export const ProfileDrawer: React.FC<{
               <>
                 <div className="flex flex-col gap-3 px-2">
                   <h2 className="text-2xl">Welcome</h2>
-                  <p className="text-muted-foreground">Sign in to plant trees, log care and walk with others to planting drives.</p>
+                  <p className="text-muted-foreground">Sign in to plant trees and keep them cared for.</p>
                   <SignInButton mode="modal">
                     <Button size="xl" className="w-full" onClick={() => setOpen(false)}>Sign in</Button>
                   </SignInButton>
                 </div>
-                <nav className="mt-4 flex flex-col gap-1" aria-label="Explore">
-                  <NavRow icon={<CalendarDays />} label="Planting drives" hint="Upcoming drives and the full history" onClick={go(onDrives)} />
-                </nav>
               </>
             )}
 

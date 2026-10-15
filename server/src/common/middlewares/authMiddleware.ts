@@ -3,6 +3,7 @@ import { clerkClient, getAuth } from '@clerk/express';
 import { db } from '../db';
 import { users, User } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { canSeeDrives } from '../auth/roles';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -79,6 +80,14 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
 export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   if (req.userRole !== 'ADMIN') {
     return res.status(403).json({ success: false, error: 'Forbidden' });
+  }
+  next();
+};
+
+/** Must run after requireAuth. Team members and admins only (the planting drive schedule). */
+export const requireTeam = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (!canSeeDrives(req.userRole)) {
+    return res.status(403).json({ success: false, error: 'Planting drives are for team members and admins' });
   }
   next();
 };

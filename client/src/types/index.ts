@@ -1,15 +1,20 @@
+/** USER can use the map; TEAM_MEMBER also sees the planting drive schedule; ADMIN manages everything. */
+export type Role = 'USER' | 'TEAM_MEMBER' | 'ADMIN';
+
 export interface User {
   id: string;
   email: string;
   name?: string;
-  role?: 'USER' | 'ADMIN';
+  role?: Role;
+  /** Optional, not verified. Only the person and admins can see it. */
+  phone?: string | null;
   avatarUrl?: string;
 }
 
 export interface CareLog {
   id: string;
   treeId: string;
-  actionType: 'WATERED' | 'FERTILIZED' | 'PRUNED' | 'INSPECTED';
+  actionType: 'WATERED' | 'FERTILIZED' | 'PRUNED' | 'INSPECTED' | 'WEEDED';
   notes?: string;
   photoUrl?: string;
   photoPublicId?: string;
@@ -34,6 +39,13 @@ export interface Tree {
   lastWateredAt?: string | null;
   /** Last care of any kind */
   lastCaredAt?: string | null;
+  lastFertilizedAt?: string | null;
+  /** Last time the grass around it was removed */
+  lastWeededAt?: string | null;
+  /** Care schedule: days between each task */
+  waterEveryDays: number;
+  fertilizeEveryDays: number;
+  weedEveryDays: number;
   /** Admin lists include the owner's name */
   ownerName?: string | null;
   userId: string;

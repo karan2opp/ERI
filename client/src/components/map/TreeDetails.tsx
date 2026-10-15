@@ -13,7 +13,8 @@ import { Textarea } from '../ui/field';
 import { Alert } from '../ui/alert';
 import { Spinner } from '../ui/spinner';
 import { ConfirmDialog } from '../ui/confirm-dialog';
-import { CareSummary, CareTimeline, TreeAge, useCareHistory } from '../TreeLife';
+import { CareSchedule, CareSummary, CareTimeline, TreeAge, useCareHistory } from '../TreeLife';
+import { CameraCapture } from '../CameraCapture';
 
 
 type Outcome = { tone: 'success' | 'error'; text: string } | null;
@@ -50,7 +51,19 @@ const CareForm: React.FC<{ tree: Tree; onDone: (outcome: Outcome) => void; onCan
   const [action, setAction] = useState<CareAction>('WATERED');
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!photo) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(photo);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,11 +96,36 @@ const CareForm: React.FC<{ tree: Tree; onDone: (outcome: Outcome) => void; onCan
         className="flex-wrap"
       />
       <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add a note (optional), e.g. 5 litres and fresh mulch" rows={2} maxLength={2000} aria-label="Note" className="bg-card" />
-      <label className="flex h-12 cursor-pointer items-center gap-3 rounded-2xl bg-card px-4 text-[15px] focus-within:ring-2 focus-within:ring-ring">
-        <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate">{photo ? photo.name : 'Add a photo (optional)'}</span>
-        <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-      </label>
+      {/* A care photo is taken live with the camera; there's no way to pick an existing one */}
+      {preview ? (
+        <div className="flex items-center gap-3 rounded-2xl bg-card p-2 pr-3">
+          <img src={preview} alt="Your care photo" className="size-16 shrink-0 rounded-xl object-cover" />
+          <p className="min-w-0 flex-1 font-medium">Photo added</p>
+          <Button variant="secondary" size="sm" onClick={() => setCameraOpen(true)}>Retake</Button>
+          <Button variant="ghost" size="icon" onClick={() => setPhoto(null)} aria-label="Remove photo">
+            <X className="size-5!" />
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCameraOpen(true)}
+          className="flex h-12 cursor-pointer items-center gap-3 rounded-2xl bg-card px-4 text-left text-[15px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">Take a photo (optional)</span>
+        </button>
+      )}
+      {cameraOpen && (
+        <CameraCapture
+          hint="Show what you did, like the watered soil or the pruned branch"
+          onCapture={(p) => {
+            setPhoto(p);
+            setCameraOpen(false);
+          }}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
       <Button type="submit" size="xl" disabled={busy}>
         {busy && <Spinner className="size-5" />} Save care log
       </Button>
@@ -235,6 +273,8 @@ export const TreeDetails: React.FC<{
       <TreeAge plantedAt={tree.plantedAt} />
 
       <CareSummary tree={tree} history={history} />
+
+      {!demo && <CareSchedule tree={tree} />}
 
       <HealthMeter score={tree.healthScore} />
 
