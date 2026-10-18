@@ -33,6 +33,10 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
+    if (tree.verificationStatus !== 'VERIFIED') {
+      return res.status(409).json({ success: false, error: 'This tree is waiting for its photo to be checked. You can log care once it is approved.' });
+    }
+
     let photoUrl: string | undefined;
     let photoPublicId: string | undefined;
 

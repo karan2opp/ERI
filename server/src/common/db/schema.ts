@@ -40,6 +40,10 @@ export const trees = pgTable('trees', {
   waterEveryDays: integer('water_every_days').default(7).notNull(),
   fertilizeEveryDays: integer('fertilize_every_days').default(60).notNull(),
   weedEveryDays: integer('weed_every_days').default(30).notNull(),
+  // VERIFIED trees are on the map. PENDING ones wait for an admin to check the photo (the automatic check wasn't sure).
+  verificationStatus: varchar('verification_status', { length: 10 }).default('VERIFIED').notNull(),
+  // Why it is pending, for the admin reviewing it
+  verificationNote: varchar('verification_note', { length: 255 }),
   userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

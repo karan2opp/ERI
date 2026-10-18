@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Droplets, Plus, Search } from 'lucide-react';
 import type { LatLng, Tree } from '../types';
 import { browseTrees, logCareActivity, type Paged, type TreeSort } from '../services/api';
-import { STATUS_LABEL, timeAgo, treeStatus } from '../lib/trees';
+import { STATUS_LABEL, isPending, timeAgo, treeStatus } from '../lib/trees';
 import { formatAgeShort, treeAge } from '../lib/age';
 import { formatDistance } from '../utils/geo';
 import { cn } from '../lib/cn';
@@ -158,6 +158,21 @@ export const MyTreesPage: React.FC<{
             <ul className={cn('flex flex-col divide-y divide-border transition-opacity', loading && 'opacity-60')} aria-busy={loading}>
               {result.data.map((t) => {
                 const status = treeStatus(t);
+                // Waiting for an admin to check the photo: not on the map yet, so no watering or "show on map"
+                if (isPending(t)) {
+                  return (
+                    <li key={t.id} className="flex items-center gap-4 py-4">
+                      <img src={t.photoUrl} alt="" className="size-16 shrink-0 rounded-xl bg-muted object-cover" loading="lazy" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-lg font-medium">{t.name}</span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                          <Badge variant="outline">Awaiting review</Badge>
+                          An admin is checking the photo. It goes on the map once approved.
+                        </span>
+                      </span>
+                    </li>
+                  );
+                }
                 return (
                   <li key={t.id} className="flex items-center gap-4 py-4">
                     <button type="button" onClick={() => onShowOnMap(t)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

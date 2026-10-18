@@ -46,6 +46,10 @@ export interface Tree {
   waterEveryDays: number;
   fertilizeEveryDays: number;
   weedEveryDays: number;
+  /** VERIFIED trees are on the map; PENDING ones wait for an admin to check the photo (only their owner and admins can see them) */
+  verificationStatus?: 'VERIFIED' | 'PENDING';
+  /** Why it is pending (admins) */
+  verificationNote?: string | null;
   /** Admin lists include the owner's name */
   ownerName?: string | null;
   userId: string;

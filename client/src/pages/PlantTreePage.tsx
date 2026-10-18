@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import type { LatLng, Tree } from '../types';
 import { createTree } from '../services/api';
-import { SPECIES_PRESETS, shortSpecies } from '../lib/trees';
+import { MAX_GPS_ACCURACY_M, MAX_PLANTING_DISTANCE_M, SPECIES_PRESETS, shortSpecies } from '../lib/trees';
 import { formatDistance, getDistanceInMeters, reverseGeocode } from '../utils/geo';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
@@ -21,10 +21,12 @@ export const PlantTreePage: React.FC<{
   hidden: boolean;
   location: LatLng | null;
   you: LatLng | null;
+  /** How sure the phone is of where you are (metres) */
+  youAccuracy: number | null;
   onChangeLocation: () => void;
   onClose: () => void;
   onPlanted: (tree: Tree) => void;
-}> = ({ hidden, location, you, onChangeLocation, onClose, onPlanted }) => {
+}> = ({ hidden, location, you, youAccuracy, onChangeLocation, onClose, onPlanted }) => {
   const [photo, setPhoto] = useState<File | null>(null);
   const [species, setSpecies] = useState<string | null>(null);
   const [customSpecies, setCustomSpecies] = useState('');
@@ -53,11 +55,23 @@ export const PlantTreePage: React.FC<{
     };
   }, [location?.lat, location?.lng]);
 
+  const fromYou = location && you ? getDistanceInMeters(you.lat, you.lng, location.lat, location.lng) : null;
+  const tooFar = fromYou !== null && fromYou > MAX_PLANTING_DISTANCE_M;
+  const gpsWeak = youAccuracy !== null && youAccuracy > MAX_GPS_ACCURACY_M;
+
   const finalSpecies = species === OTHER ? customSpecies.trim() : species;
   // What's still missing, shown on the button
   const blocker = !location
     ? 'Set the location to continue'
-    : !plantedAt
+    : !you || youAccuracy === null
+      ? 'Waiting for your location'
+      : gpsWeak
+        ? 'Your location is not precise enough'
+        : tooFar
+          ? `Be within ${MAX_PLANTING_DISTANCE_M} m of the tree`
+          : !photo
+            ? 'Take a photo of the tree'
+            : !plantedAt
       ? 'Choose when it was planted'
       : plantedInFuture
         ? "Planting time can't be in the future"
@@ -70,7 +84,7 @@ export const PlantTreePage: React.FC<{
             : null;
 
   const submit = async () => {
-    if (blocker || !location || !finalSpecies) return;
+    if (blocker || !location || !you || youAccuracy === null || !photo || !finalSpecies) return;
     setBusy(true);
     setError(null);
     try {
@@ -81,11 +95,15 @@ export const PlantTreePage: React.FC<{
       form.append('address', address.trim());
       form.append('latitude', String(location.lat));
       form.append('longitude', String(location.lng));
+      // Where you are standing right now: the server checks the tree is within 15 m of it
+      form.append('deviceLatitude', String(you.lat));
+      form.append('deviceLongitude', String(you.lng));
+      form.append('deviceAccuracy', String(youAccuracy));
       if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
       form.append('waterEveryDays', String(parseDays(schedule.water)));
       form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
       form.append('weedEveryDays', String(parseDays(schedule.weed)));
-      if (photo) form.append('photo', photo);
+      form.append('photo', photo);
       onPlanted(await createTree(form));
     } catch (err) {
       const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -94,8 +112,6 @@ export const PlantTreePage: React.FC<{
       setBusy(false);
     }
   };
-
-  const fromYou = location && you ? getDistanceInMeters(you.lat, you.lng, location.lat, location.lng) : null;
 
   if (hidden) return null;
 
@@ -116,7 +132,7 @@ export const PlantTreePage: React.FC<{
           {location ? (
             <>
               <span className="font-medium">Location set</span>
-              {fromYou !== null && <span className="text-muted-foreground">, {formatDistance(fromYou)} from you</span>}
+              {fromYou !== null && <span className={tooFar ? 'text-destructive' : 'text-muted-foreground'}>, {formatDistance(fromYou)} from you</span>}
             </>
           ) : (
             <span className="text-muted-foreground">Finding your location…</span>
@@ -127,7 +143,18 @@ export const PlantTreePage: React.FC<{
         </Button>
       </div>
 
-      <Field label="Photo of the tree">
+      {tooFar && (
+        <Alert tone="error">
+          You can only register a tree within {MAX_PLANTING_DISTANCE_M} m of where you are standing. Walk to the tree, or move the pin onto where you are.
+        </Alert>
+      )}
+      {gpsWeak && (
+        <Alert tone="thirsty">
+          Your phone's location is only accurate to about {Math.round(youAccuracy!)} m. Step into the open and wait a few seconds.
+        </Alert>
+      )}
+
+      <Field label="Photo of the tree" description="It has to show the tree or plant. Photos of anything else are rejected, and unclear ones are checked by an admin first.">
         <PhotoField file={photo} onChange={setPhoto} />
       </Field>
 

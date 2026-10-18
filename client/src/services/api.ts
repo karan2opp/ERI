@@ -121,6 +121,18 @@ export const browseTrees = async (params: {
 };
 
 // Admin APIs
+/** Admin: trees whose photo the automatic check wasn't sure about, oldest first. */
+export const fetchPendingTrees = async (page = 1, limit = 10): Promise<Paged<Tree & { ownerEmail?: string | null }>> => {
+  const res = await api.get('/admin/trees/pending', { params: { page, limit } });
+  return res.data;
+};
+
+/** Admin: approve a pending tree onto the map, or reject (remove) it. */
+export const reviewTree = async (id: string, decision: 'APPROVE' | 'REJECT') => {
+  const res = await api.post(`/admin/trees/${id}/review`, { decision });
+  return res.data;
+};
+
 export const fetchAdminStats = async () => {
   const res = await api.get('/admin/stats');
   return res.data;

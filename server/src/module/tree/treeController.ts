@@ -8,6 +8,12 @@ import { needsWater } from '../../common/utils/careSchedule';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
+import { verifyTreePhoto } from '../../common/services/treeVerifier';
+import { checkPlantingLocation } from '../../common/utils/treePolicy';
+
+/** Trees everyone can see: verified ones. A viewer also sees their own, even while one waits for review. */
+const visibleTrees = (viewerId?: string | null): SQL =>
+  viewerId ? or(eq(trees.verificationStatus, 'VERIFIED'), eq(trees.userId, viewerId))! : eq(trees.verificationStatus, 'VERIFIED');
 
 // When a tree was planted: not in the future (a few minutes' clock skew allowed), not absurdly old
 const plantedAtSchema = z.coerce
@@ -37,6 +43,10 @@ const createTreeSchema = z.object({
   waterEveryDays: intervalDays.optional(),
   fertilizeEveryDays: intervalDays.optional(),
   weedEveryDays: intervalDays.optional(),
+  // Where the person's phone says they are standing: the tree must be within 15 m of it
+  deviceLatitude: latitudeSchema,
+  deviceLongitude: longitudeSchema,
+  deviceAccuracy: z.coerce.number().positive().max(100_000),
 });
 
 const updateTreeSchema = z.object({
@@ -57,6 +67,8 @@ const validationError = (error: z.ZodError) =>
 export const getAllTrees = async (req: Request, res: Response) => {
   try {
     const allTrees = await db.query.trees.findMany({
+      // The map shows only trees whose photo has been verified
+      where: visibleTrees(),
       with: {
         owner: {
           columns: {
@@ -122,7 +134,10 @@ export const getTreeById = async (req: Request, res: Response) => {
       }
     });
 
-    if (!tree) {
+    // A tree waiting for review is seen only by its owner and admins
+    const viewer = req as AuthenticatedRequest;
+    const mayView = tree && (tree.verificationStatus === 'VERIFIED' || tree.userId === viewer.userId || viewer.userRole === 'ADMIN');
+    if (!tree || !mayView) {
       return res.status(404).json({
         success: false,
         error: 'Tree not found'
@@ -155,20 +170,39 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const { name, species, description, latitude, longitude, address } = parsed.data;
+
+    // 1. The person has to be standing at the tree (cheap, so it goes before the photo check)
+    const tooFar = checkPlantingLocation(
+      { latitude, longitude },
+      { latitude: parsed.data.deviceLatitude, longitude: parsed.data.deviceLongitude, accuracy: parsed.data.deviceAccuracy }
+    );
+    if (tooFar) {
+      return res.status(422).json({ success: false, code: 'TOO_FAR', error: tooFar });
+    }
+
+    // 2. A photo is required, and it has to show a tree or plant
+    if (!req.file) {
+      return res.status(400).json({ success: false, code: 'PHOTO_REQUIRED', error: 'Take a photo of the tree to register it' });
+    }
+    const check = await verifyTreePhoto(req.file);
+    if (check.verdict === 'FALSE') {
+      // Nothing is saved or uploaded
+      return res.status(422).json({
+        success: false,
+        code: 'NOT_A_TREE',
+        error: "That photo doesn't look like a tree or plant. Take a clear photo of the tree you planted."
+      });
+    }
+
     const now = new Date();
     const plantedAt = parsed.data.plantedAt ?? now;
     // Planted just now: that planting is its first watering. An older tree being added to the map
     // has no known watering yet, so it starts as "needs water" until someone logs one.
     const justPlanted = now.getTime() - plantedAt.getTime() < JUST_PLANTED_MS;
 
-    let photoUrl = 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&w=1000&q=80';
-    let photoPublicId: string | undefined;
-
-    if (req.file) {
-      const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
-      photoUrl = upload.url;
-      photoPublicId = upload.publicId;
-    }
+    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
+    const photoUrl = upload.url;
+    const photoPublicId = upload.publicId;
 
     const [newTree] = await db.insert(trees).values({
       name,
@@ -186,7 +220,10 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       weedEveryDays: parsed.data.weedEveryDays,
       lastWateredAt: justPlanted ? plantedAt : null,
       lastCaredAt: justPlanted ? plantedAt : now,
-      healthScore: 100
+      healthScore: 100,
+      // TRUE goes straight on the map; PENDING waits for an admin to look at the photo
+      verificationStatus: check.verdict === 'TRUE' ? 'VERIFIED' : 'PENDING',
+      verificationNote: check.verdict === 'TRUE' ? null : check.note ?? null
     }).returning();
 
     await db.insert(careLogs).values({
@@ -201,7 +238,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Tree registered successfully! 🌳',
+      message: check.verdict === 'TRUE' ? 'Tree registered successfully! 🌳' : 'Tree submitted. An admin will check the photo before it appears on the map.',
       data: newTree
     });
   } catch (error) {
@@ -251,7 +288,21 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
     let photoUrl = existingTree.photoUrl;
     let photoPublicId = existingTree.photoPublicId;
 
+    // A new photo has to pass the same check: a tree can't be swapped to a photo of something else
+    let verificationStatus = existingTree.verificationStatus;
+    let verificationNote = existingTree.verificationNote;
     if (req.file) {
+      const check = await verifyTreePhoto(req.file);
+      if (check.verdict === 'FALSE') {
+        return res.status(422).json({
+          success: false,
+          code: 'NOT_A_TREE',
+          error: "That photo doesn't look like a tree or plant. Take a clear photo of the tree."
+        });
+      }
+      verificationStatus = check.verdict === 'TRUE' ? 'VERIFIED' : 'PENDING';
+      verificationNote = check.verdict === 'TRUE' ? null : check.note ?? null;
+
       const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
       photoUrl = upload.url;
       
@@ -274,6 +325,8 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
         weedEveryDays: parsed.data.weedEveryDays ?? existingTree.weedEveryDays,
         photoUrl,
         photoPublicId,
+        verificationStatus,
+        verificationNote,
         updatedAt: new Date()
       })
       .where(eq(trees.id, id))
@@ -388,14 +441,16 @@ export const browseTrees = async (req: Request, res: Response) => {
     // Each tree is judged against its own watering interval
     const isThirsty = needsWater;
 
-    const base: SQL[] = [];
+    // Verified trees for everyone; your own list also shows trees waiting for review
+    const base: SQL[] = [visibleTrees(userId)];
     if (userId) base.push(eq(trees.userId, userId));
     if (search) base.push(or(ilike(trees.name, likePattern(search)), ilike(trees.species, likePattern(search)), ilike(trees.address, likePattern(search)))!);
     if (distance && radius) base.push(sql`${distance} <= ${radius}`);
 
     const filters = [...base];
-    if (status === 'thirsty') filters.push(isThirsty);
-    if (status === 'healthy') filters.push(sql`NOT ${needsWater}`);
+    // Only verified trees can need water
+    if (status === 'thirsty') filters.push(and(isThirsty, eq(trees.verificationStatus, 'VERIFIED'))!);
+    if (status === 'healthy') filters.push(and(sql`NOT ${needsWater}`, eq(trees.verificationStatus, 'VERIFIED'))!);
     const where = filters.length ? and(...filters) : undefined;
 
     const order =
@@ -420,7 +475,7 @@ export const browseTrees = async (req: Request, res: Response) => {
       // Your totals ignore the status filter, so the stat tiles stay the same while you switch it
       userId
         ? db
-            .select({ total: sql<number>`count(*)`, thirsty: sql<number>`count(*) filter (where ${isThirsty})` })
+            .select({ total: sql<number>`count(*)`, thirsty: sql<number>`count(*) filter (where ${isThirsty} and ${trees.verificationStatus} = 'VERIFIED')` })
             .from(trees)
             .where(eq(trees.userId, userId))
         : Promise.resolve(null),

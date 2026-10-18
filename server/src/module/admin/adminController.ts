@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
 import { db } from '../../common/db';
 import { users, trees, careLogs } from '../../common/db/schema';
-import { and, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { CloudinaryService } from '../../common/services/cloudinaryService';
+import { isUuid } from '../../common/utils/validation';
 import { z } from 'zod';
 import { ROLES } from '../../common/auth/roles';
 import { needsWater } from '../../common/utils/careSchedule';
@@ -22,13 +24,16 @@ const likePattern = (search: string) => `%${search.replace(/[\\%_]/g, '\\$&')}%`
 export const getAdminStats = async (req: Request, res: Response) => {
   try {
     const userCountResult = await db.select({ count: sql<number>`count(*)` }).from(users);
-    const treeCountResult = await db.select({ count: sql<number>`count(*)` }).from(trees);
+    const treeCountResult = await db.select({ count: sql<number>`count(*)` }).from(trees).where(eq(trees.verificationStatus, 'VERIFIED'));
+    const [{ pending }] = await db.select({ pending: sql<number>`count(*)` }).from(trees).where(eq(trees.verificationStatus, 'PENDING'));
 
     res.status(200).json({
       success: true,
       stats: {
         totalUsers: Number(userCountResult[0].count),
-        totalTrees: Number(treeCountResult[0].count)
+        totalTrees: Number(treeCountResult[0].count),
+        // Trees whose photo an admin still has to check
+        pendingTrees: Number(pending)
       }
     });
   } catch (error) {
@@ -93,7 +98,8 @@ export const getAdminTrees = async (req: Request, res: Response) => {
     const { dateField, from, to, status, userId } = parsed.data;
     const column = dateField === 'planted' ? trees.plantedAt : dateField === 'watered' ? trees.lastWateredAt : trees.lastCaredAt;
 
-    const filters: SQL[] = [];
+    // Trees waiting for review are in the Review tab, not here
+    const filters: SQL[] = [eq(trees.verificationStatus, 'VERIFIED')];
     if (search) {
       filters.push(or(ilike(trees.name, likePattern(search)), ilike(trees.species, likePattern(search)), ilike(trees.address, likePattern(search)))!);
     }
@@ -224,5 +230,71 @@ export const getAdminUserCare = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching user care activity:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch care activity' });
+  }
+};
+
+/**
+ * GET /admin/trees/pending: trees whose photo the automatic check wasn't sure about, oldest first,
+ * for an admin to approve or reject.
+ */
+export const getPendingTrees = async (req: Request, res: Response) => {
+  try {
+    const { page, limit, offset } = parsePaging(req);
+    const where = eq(trees.verificationStatus, 'PENDING');
+    const [rows, [{ count }]] = await Promise.all([
+      db
+        .select({ tree: trees, ownerName: users.name, ownerEmail: users.email })
+        .from(trees)
+        .leftJoin(users, eq(users.id, trees.userId))
+        .where(where)
+        .orderBy(asc(trees.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ count: sql<number>`count(*)` }).from(trees).where(where),
+    ]);
+    const total = Number(count);
+    res.status(200).json({
+      success: true,
+      data: rows.map((r) => ({ ...r.tree, ownerName: r.ownerName, ownerEmail: r.ownerEmail })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
+  } catch (error) {
+    console.error('Error fetching pending trees:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch trees to review' });
+  }
+};
+
+/** POST /admin/trees/:id/review  { decision: 'APPROVE' | 'REJECT' }: approve puts the tree on the map, reject removes it and its photo. */
+export const reviewTree = async (req: Request, res: Response) => {
+  const parsed = z.object({ decision: z.enum(['APPROVE', 'REJECT']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'decision must be APPROVE or REJECT' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(404).json({ success: false, error: 'Tree not found' });
+
+  try {
+    const [tree] = await db.select().from(trees).where(eq(trees.id, id));
+    if (!tree) return res.status(404).json({ success: false, error: 'Tree not found' });
+    if (tree.verificationStatus !== 'PENDING') {
+      return res.status(409).json({ success: false, error: 'This tree has already been reviewed' });
+    }
+
+    if (parsed.data.decision === 'APPROVE') {
+      const [approved] = await db
+        .update(trees)
+        .set({ verificationStatus: 'VERIFIED', verificationNote: null, updatedAt: new Date() })
+        .where(and(eq(trees.id, id), eq(trees.verificationStatus, 'PENDING')))
+        .returning();
+      return res.status(200).json({ success: true, data: approved });
+    }
+
+    await db.delete(trees).where(and(eq(trees.id, id), eq(trees.verificationStatus, 'PENDING')));
+    await CloudinaryService.deleteImage(tree.photoPublicId ?? undefined);
+    res.status(200).json({ success: true, data: { id, removed: true } });
+  } catch (error) {
+    console.error('Error reviewing tree:', error);
+    res.status(500).json({ success: false, error: 'Failed to review the tree' });
   }
 };

@@ -22,6 +22,10 @@ const envSchema = z.object({
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
 
+  // OpenAI: checks that an uploaded photo is a tree or plant. Without a key every new tree waits for manual review.
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+
   // Google Maps API
   GOOGLE_MAP_API: z.string().optional(),
 });

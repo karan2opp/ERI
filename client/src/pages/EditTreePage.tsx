@@ -10,7 +10,7 @@ import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
 import { CareScheduleFields, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
-export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: () => void }> = ({ tree, onClose, onSaved }) => {
+export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: (tree: Tree) => void }> = ({ tree, onClose, onSaved }) => {
   const [photo, setPhoto] = useState<File | null>(null);
   const [name, setName] = useState(tree.name);
   const [species, setSpecies] = useState(tree.species);
@@ -56,8 +56,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
       form.append('weedEveryDays', String(parseDays(schedule.weed)));
       if (photo) form.append('photo', photo);
-      await updateTree(tree.id, form);
-      onSaved();
+      onSaved(await updateTree(tree.id, form));
     } catch (err) {
       const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setError(message || "Couldn't save your changes. Try again.");

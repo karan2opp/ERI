@@ -3,6 +3,13 @@ import type { Tree } from '../types';
 /** Days between waterings, unless the tree sets its own. */
 export const DEFAULT_WATER_EVERY_DAYS = 7;
 
+/** A tree can only be registered when you are standing within this many metres of it (the server checks too). */
+export const MAX_PLANTING_DISTANCE_M = 15;
+/** Your phone's GPS has to be at least this precise (metres) to back that up. */
+export const MAX_GPS_ACCURACY_M = 20;
+
+export const isPending = (tree: Pick<Tree, 'verificationStatus'>) => tree.verificationStatus === 'PENDING';
+
 export type TreeStatus = 'healthy' | 'thirsty';
 
 export const hoursSinceWatered = (tree: Pick<Tree, 'lastWateredAt'>): number | null =>

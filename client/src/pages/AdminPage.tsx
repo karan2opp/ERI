@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import type { Drive, DriveType, DriveVisibility, LatLng, Tree, User } from '../types';
 import { createGlobalDrive, fetchAdminStats, fetchAdminUsers } from '../services/api';
+import { AdminReview } from '../components/AdminReview';
 import { useUser } from '@clerk/react';
 import { formatPhone } from '../lib/phone';
 import { RoleSelect } from '../components/RoleSelect';
@@ -21,12 +22,13 @@ import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
-type Tab = 'overview' | 'drives' | 'trees' | 'users';
+type Tab = 'overview' | 'drives' | 'trees' | 'review' | 'users';
 
 const TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'drives' as const, label: 'Drives' },
   { value: 'trees' as const, label: 'Trees' },
+  { value: 'review' as const, label: 'Review' },
   { value: 'users' as const, label: 'Users' },
 ];
 
@@ -78,7 +80,7 @@ function usePagedList<T>(
 }
 
 const Overview: React.FC = () => {
-  const [stats, setStats] = useState<{ totalUsers: number; totalTrees: number } | null>(null);
+  const [stats, setStats] = useState<{ totalUsers: number; totalTrees: number; pendingTrees: number } | null>(null);
   useEffect(() => {
     fetchAdminStats().then((res) => res.success && setStats(res.stats), () => {});
   }, []);
@@ -86,6 +88,7 @@ const Overview: React.FC = () => {
     <div className="grid grid-cols-2 gap-3">
       <Stat value={stats?.totalTrees ?? '–'} label="trees on the map" />
       <Stat value={stats?.totalUsers ?? '–'} label="users signed up" />
+      <Stat value={stats?.pendingTrees ?? '–'} label="photos to review" tone={stats?.pendingTrees ? 'thirsty' : undefined} />
     </div>
   );
 };
@@ -298,13 +301,20 @@ export const AdminPage: React.FC<{
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // How many trees wait for a photo check, shown on the Review tab
+  const [pending, setPending] = useState(0);
+  const loadPending = () => {
+    fetchAdminStats().then((res) => res.success && setPending(res.stats.pendingTrees ?? 0), () => {});
+  };
+  useEffect(loadPending, []);
+  const tabs = TABS.map((t) => (t.value === 'review' && pending > 0 ? { ...t, label: `Review · ${pending}` } : t));
 
   // The admin page stays underneath while a drive or the schedule form is open,
   // so going back keeps the tab, search, filters and page you were on
   return (
     <>
       <Page title="Admin" onBack={onClose} wide>
-        <Chips label="Section" options={TABS} value={tab} onChange={setTab} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
+        <Chips label="Section" options={tabs} value={tab} onChange={setTab} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
         {tab === 'overview' && <Overview />}
         {tab === 'drives' && (
           <DrivesBrowser
@@ -319,6 +329,7 @@ export const AdminPage: React.FC<{
           />
         )}
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
+        {tab === 'review' && <AdminReview onReviewed={loadPending} />}
         {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
       </Page>
 

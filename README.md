@@ -96,6 +96,23 @@ Every drive has a **type** and a **visibility**, both set by an admin when sched
 
 Signed-out visitors and normal users see only `ALL` drives; team members see `ALL` and `TEAM`; admins see everything. The server applies this to the list, the calendar, a single drive (a `TEAM` drive answers 401 signed out and 403 for a normal user) and the live-walk socket rooms.
 
+## 📸 Photo check and planting rules
+
+A tree is only registered when two things hold, both checked **on the server**:
+
+1. **You are at the tree.** The app sends where your phone is (`deviceLatitude`, `deviceLongitude`, `deviceAccuracy`) along with the tree's pin. The tree must be within **15 m** of you, and your GPS must be accurate to 20 m or better. Limits live in `server/src/common/utils/treePolicy.ts`.
+2. **The photo shows a tree or plant.** A photo is required and is checked by an OpenAI vision model (`server/src/common/services/treeVerifier.ts`), which can only answer one of three things:
+
+   | Answer | What happens |
+   |---|---|
+   | `true` | It is a tree or plant: registered and on the map straight away |
+   | `false` | It is not: the photo is rejected (HTTP 422) and nothing is saved or uploaded |
+   | `pending` | The model is not sure: the tree is saved as `PENDING` and stays off the map until an admin approves or rejects it in **Admin → Review** |
+
+   A missing `OPENAI_API_KEY`, a timeout, an API error or an unexpected answer all count as `pending`, so a tree is never approved by accident. Pending trees are visible only to their owner (My trees → "Awaiting review") and admins, and can't be cared for until approved. Replacing a tree's photo runs the same check. Each person can send 30 photos an hour, since every check costs money.
+
+Set it up with `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-mini`) in `server/.env`, then run `npm run db:push` for the new `verification_status` columns.
+
 ## 🌱 Care schedules
 
 Each tree has three schedules, set when it is planted and editable later: **water every N days** (default 7), **fertilise every N days** (default 60) and **remove the grass every N days** (default 30). A tree "needs water" once it is past its own watering interval. Every care action (watered, fertilised, grass removed, pruned, checked) is logged with its date, time and who did it, and the tree shows when each task is next due.

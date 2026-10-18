@@ -553,6 +553,7 @@ function MapApp() {
           hidden={picking}
           location={plantAt}
           you={you}
+          youAccuracy={youAccuracy}
           onChangeLocation={() => {
             if (plantAt) setFlyTo({ ...plantAt, zoom: 18, timestamp: Date.now() });
             open('pick');
@@ -561,6 +562,11 @@ function MapApp() {
           onPlanted={(tree) => {
             back();
             loadTrees();
+            // The photo check wasn't sure: an admin looks at it before the tree goes on the map
+            if (tree.verificationStatus === 'PENDING') {
+              showBanner(`${tree.name} was submitted. An admin will check the photo before it appears on the map.`);
+              return;
+            }
             setStatus('ALL');
             setDistance('ALL');
             setSelection({ kind: 'tree', id: tree.id });
@@ -574,10 +580,10 @@ function MapApp() {
         <EditTreePage
           tree={editing}
           onClose={back}
-          onSaved={() => {
+          onSaved={(tree) => {
             back();
             loadTrees();
-            showBanner('Changes saved.');
+            showBanner(tree.verificationStatus === 'PENDING' ? 'Saved. An admin will check the new photo before this tree shows on the map again.' : 'Changes saved.');
           }}
         />
       )}
