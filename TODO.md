@@ -51,10 +51,11 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] Unsubscribe link inside emails that works without signing in
 
 ### Hosting (Vercel for the client, Render for the server)
-- [ ] Vercel: set `VITE_API_URL` (the Render address plus `/api/v1`) and `VITE_CLERK_PUBLISHABLE_KEY`; add a rewrite so deep links like `/?drive=...` open the app; `sw.js` must be served from the site root
+- [ ] Vercel: set `VITE_API_URL` (the Render address plus `/api/v1`; live walking also connects there, since Vercel can't forward WebSockets) and `VITE_CLERK_PUBLISHABLE_KEY`; add a rewrite so deep links like `/?drive=...` open the app; `sw.js` must be served from the site root
 - [ ] Render: set every variable from `server/.env.example`; set `CLIENT_ORIGIN` to your real domain(s) (comma-separated) and `APP_URL` to the public address so links in emails are right; set `TRUST_PROXY=1`
-- [ ] Render free web services go to sleep when idle: use a paid instance, or the first request after a quiet period will be slow (and the live-walk sockets drop)
-- [ ] Managed Postgres with daily backups; run `npm run db:push` against it once
+- [ ] **First month on Render's free plan:** keep it awake with a free outside pinger (cron-job.org or UptimeRobot) calling `GET https://<your-render-app>.onrender.com/api/v1/health` every **10 minutes** (free services sleep after 15 minutes idle). The health check doesn't touch the database, so Neon can still sleep. Keep only this one free service in the Render workspace: a service awake all month uses about 744 of the 750 free hours
+- [ ] **After the first month:** move the server to Render's paid instance or your own VM (free services can be restarted at any time, which drops live walks)
+- [ ] Neon Postgres: on Render set `DATABASE_URL` to Neon's **pooled** address (host has `-pooler`, add `?sslmode=require`); for schema changes set `DATABASE_URL_DIRECT` to the **direct** address and run `npm run db:push` once from your machine. Turn on Neon's backups/branching retention
 - [ ] A real domain with HTTPS on both sides, and your domain verified in Resend
 - [ ] Error tracking (for example Sentry) and uptime monitoring
 

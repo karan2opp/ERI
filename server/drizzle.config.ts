@@ -9,6 +9,7 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5555/plantree_db',
+    // Schema changes need a direct connection; with Neon, put the non-pooled address in DATABASE_URL_DIRECT
+    url: process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5555/plantree_db',
   },
 });
