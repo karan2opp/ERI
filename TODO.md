@@ -9,6 +9,7 @@ Last updated 2026-10-19. Hosting plan: client on Vercel, server on Render, Postg
 - [x] Edit and delete drives (admins)
 - [x] Email (Resend) and push (Web Push) notifications for new, changed and cancelled drives, with a choice of audience: don't send / team members / everyone. People can turn emails off and manage push in Account > Notifications
 - [x] Photo check with OpenAI, planting within 15 m, admin review queue, settings for whose photos are checked
+- [x] Map loads only what's in view: `GET /trees/pins` (pins in view, clusters when zoomed out or past 500 trees, every tree within 100 m / 500 m / 1 km), filters on the server, location indexes, 30-second browser caching. The old `GET /trees` (every tree) is removed. Tested with 50,000 trees: 4 to 13 ms and a few KB per answer, against 31.6 MB before
 
 ## Needs you (keys and accounts)
 
@@ -19,41 +20,17 @@ Last updated 2026-10-19. Hosting plan: client on Vercel, server on Render, Postg
 
 ---
 
-## Plan: the map loads every tree at once
+## Map loading: done, and what's left
 
-### What happens today
-
-| Part | How it loads | Problem |
-|---|---|---|
-| The list in the bottom sheet / side panel | `GET /trees/browse`: 10 per page, nearest first, 100 m / 500 m / 1 km / any distance, all on the server | Already fine |
-| The pins on the map | `GET /trees`: **every** tree, with owner and last care log joined | Slow and heavy once there are thousands of trees |
-| Pin filters (needs water / healthy / mine / distance) | Done in the browser on the full list | Only works because the browser has everything |
-
-So the list is already the design you described. Only the **map pins** need to change.
-
-### Can we serve tree locations from a CDN, or cache them in Redis?
-
-- **Allowed?** Yes. Tree data is ours, so the Google Map Tiles restrictions don't apply to it.
-- **CDN:** it only helps when many people request the *same URL*. A URL like "all trees near my GPS point" is different for everyone, so a CDN would cache nothing. Fix: use **tile-shaped URLs**, `/trees/pins/{z}/{x}/{y}`, so everyone looking at the same part of the city asks for the same URL, and the CDN (Cloudflare in front of Render, or Vercel rewrites) answers it. A tree planted now shows up for others within about a minute (`s-maxage=60`). The person who planted it sees it immediately from their own state.
-- **Redis:** not needed to start. With the right index, Postgres answers "pins in this tile" in a few milliseconds. Add Redis later only if monitoring shows the database is the bottleneck (Render sells it as "Key Value"). Reasonable uses then: per-tile cache with invalidation when a tree is added, approved or deleted, and counters for a public stats page.
-- **Browser cache:** the same `Cache-Control` also lets each phone reuse pins it already downloaded.
-
-### Steps, in order (each one is shippable on its own)
-
-1. **Stop loading everything for the map.** New endpoint `GET /trees/pins?bbox=west,south,east,north&zoom=Z`: returns only what's in view and a slim row per tree (`id, lat, lng, needsWater`; no owner, no care logs), capped at about 500. Verified trees only, as today.
-2. **Database index.** Add an index for location queries (a btree on latitude and longitude with a bounding-box prefilter is enough up to about 100k trees; PostGIS only if we later need polygons). Make it partial: `WHERE verification_status = 'VERIFIED'`.
-3. **Clustering on the server at low zoom.** When zoomed out (below about 14), return grid clusters `{lat, lng, count}` instead of individual trees; tapping a cluster zooms in. This keeps the response small at any city size.
-4. **Move the pin filters to the server.** Needs water / healthy / mine / distance become query parameters on the pins endpoint, so the browser no longer needs every tree to filter.
-5. **Client:** load pins on map move (debounced about 300 ms), keep the old pins on screen while new ones load, fetch a single tree by id when its pin is tapped (already works). The list keeps using `/trees/browse`.
-6. **Caching:** switch pins to tile-shaped URLs, add `Cache-Control: public, max-age=30, s-maxage=60, stale-while-revalidate=300` and an `ETag`, then put a CDN in front. Measure first; add Redis only if the numbers say so.
-7. **Tests and a load check:** seed 50,000 trees (the demo seeder can do it) and check pin responses stay under about 100 ms and under about 50 KB.
+Built (see "Done recently"). Still open, only when traffic needs it (not needed for 20 to 40 users):
+- [ ] Tile-shaped pin URLs plus a CDN (Cloudflare in front of Render), so people in the same area share cached answers
+- [ ] Redis, only if monitoring shows the database is the bottleneck
 
 ---
 
 ## To-do: improvements, by area
 
 ### Map and trees (the items you pasted; for later)
-- [ ] Map: load only what's in view, with clustering (the plan above)
 - [ ] Share a single tree: a link and a printable QR tag for the trunk that opens the tree's page (`/?tree=<id>`)
 - [ ] Public home for visitors: live totals ("2,431 trees planted"), species counts, a leaderboard
 - [ ] Tree life events: mark a tree dead or replaced, and a growth photo timeline

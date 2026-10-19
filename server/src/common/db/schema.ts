@@ -1,5 +1,5 @@
-import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean, index } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 
 // Users Table (Synced with Clerk Auth)
 export const users = pgTable('users', {
@@ -68,7 +68,12 @@ export const trees = pgTable('trees', {
   userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => [
+  // The map asks for "verified trees in this area": a location index over verified trees only
+  index('trees_verified_location_idx').on(t.latitude, t.longitude).where(sql`verification_status = 'VERIFIED'`),
+  // "Mine" filters and per-person counts
+  index('trees_user_id_idx').on(t.userId),
+]);
 
 // Care History & Maintenance Logs Table
 export const careLogs = pgTable('care_logs', {

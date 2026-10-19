@@ -70,41 +70,6 @@ const updateTreeSchema = z.object({
 const validationError = (error: z.ZodError) =>
   error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ');
 
-export const getAllTrees = async (req: Request, res: Response) => {
-  try {
-    const allTrees = await db.query.trees.findMany({
-      // The map shows only trees whose photo has been verified
-      where: visibleTrees(),
-      with: {
-        owner: {
-          columns: {
-            id: true,
-            name: true,
-            avatarUrl: true
-          }
-        },
-        careLogs: {
-          orderBy: (logs, { desc }) => [desc(logs.performedAt)],
-          limit: 1
-        }
-      },
-      orderBy: (treesTable, { desc }) => [desc(treesTable.createdAt)]
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: allTrees.length,
-      data: allTrees
-    });
-  } catch (error) {
-    console.error('Error fetching trees:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to fetch trees'
-    });
-  }
-};
-
 export const getTreeById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

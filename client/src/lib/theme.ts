@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
-// Light unless you choose Dark (or Device, to follow your phone/computer) on the Account page
-export type ThemeChoice = 'light' | 'dark' | 'system';
+// Light unless you choose Dark in the profile menu
+export type ThemeChoice = 'light' | 'dark';
 
 const KEY = 'plantree.theme';
 const media = () => window.matchMedia('(prefers-color-scheme: dark)');
@@ -9,29 +9,23 @@ const media = () => window.matchMedia('(prefers-color-scheme: dark)');
 const readChoice = (): ThemeChoice => {
   try {
     const saved = localStorage.getItem(KEY);
-    return saved === 'dark' || saved === 'system' ? saved : 'light';
+    // 'system' was an older "follow the device" choice: keep whatever it shows now
+    if (saved === 'system') return media().matches ? 'dark' : 'light';
+    return saved === 'dark' ? 'dark' : 'light';
   } catch {
     return 'light';
   }
 };
 
 const apply = (choice: ThemeChoice) => {
-  const dark = choice === 'dark' || (choice === 'system' && media().matches);
+  const dark = choice === 'dark';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   window.dispatchEvent(new Event('plantree:theme'));
 };
 
-/** The saved theme choice (light, dark or follow the system), kept in localStorage. */
+/** The saved theme choice (light or dark), kept in localStorage. */
 export function useThemeChoice(): [ThemeChoice, (choice: ThemeChoice) => void] {
   const [choice, setChoice] = useState<ThemeChoice>(readChoice);
-
-  useEffect(() => {
-    if (choice !== 'system') return;
-    const m = media();
-    const onChange = () => apply('system');
-    m.addEventListener('change', onChange);
-    return () => m.removeEventListener('change', onChange);
-  }, [choice]);
 
   const update = (next: ThemeChoice) => {
     try {

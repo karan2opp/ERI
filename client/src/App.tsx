@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
 import { Calendar, CheckCircle2, LocateFixed, Plus } from 'lucide-react';
 import type { Drive, LatLng, Role, Tree } from './types';
-import { fetchAllTrees, fetchGlobalDrives, setAuthTokenGetter, syncCurrentUser } from './services/api';
+import { browseTrees, fetchGlobalDrives, fetchTreeById, fetchTreePins, setAuthTokenGetter, syncCurrentUser, type PinsResult, type TreePin } from './services/api';
+import { pinFromTree, snapToTiles, type MapView } from './lib/pins';
 import { reconnectSocket } from './utils/socket';
 import { formatDistance, formatMinutes, getDistanceInMeters } from './utils/geo';
 import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
@@ -97,7 +98,6 @@ function MapApp() {
   const [phone, setPhone] = useState<string | null>(null);
   // Team members and admins also see team-only drives; the server sends each person only what they may see
   const seesTeamDrives = canSeeTeamDrives(role);
-  const [serverTrees, setServerTrees] = useState<Tree[] | null>(null);
   const [you, setYou] = useState<LatLng | null>(null);
   // How sure the phone is of where you are (metres), and the direction you're moving (GPS only reports it while moving)
   const [youAccuracy, setYouAccuracy] = useState<number | null>(null);
@@ -275,14 +275,72 @@ function MapApp() {
   }, [you, retryLocation]);
 
   // ---- Trees ----
-  // The map's pins load every tree; lists page on the server and reload when listRefresh changes
+  // The map draws only what's in view (GET /trees/pins); lists page on the server. Both reload when
+  // loadTrees() is called (after planting, watering, editing or deleting a tree).
   const [listRefresh, setListRefresh] = useState(0);
   const [listTotal, setListTotal] = useState<number | null>(null);
+  const [mapView, setMapView] = useState<MapView | null>(null);
+  const [pins, setPins] = useState<PinsResult | null>(null);
+  // Bumped after a change, so the map skips its 30-second cached answer and shows the change at once
+  const [pinsVersion, setPinsVersion] = useState(0);
+  // No verified trees anywhere yet: show sample trees so a new map isn't empty
+  const [noTreesYet, setNoTreesYet] = useState(false);
+  // Your tree counts (profile drawer and Account), from the server
+  const [myTreeSummary, setMyTreeSummary] = useState<{ total: number; thirsty: number } | null>(null);
+  // Pins only carry what the map draws; the selected tree's full details are fetched when it's tapped
+  const [selectedTreeData, setSelectedTreeData] = useState<Tree | null>(null);
+  const selectionRef = useRef<Selection>(null);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
   const loadTrees = useCallback(() => {
-    fetchAllTrees().then(setServerTrees, () => setServerTrees([]));
+    setPinsVersion((v) => v + 1);
     setListRefresh((k) => k + 1);
+    // Refresh the open tree too (e.g. after watering it)
+    const sel = selectionRef.current;
+    if (sel?.kind === 'tree' && !isDemoTree({ id: sel.id })) fetchTreeById(sel.id).then(setSelectedTreeData, () => {});
   }, []);
-  useEffect(loadTrees, [loadTrees]);
+
+  // Pins for what's on screen, or for the distance filter around you. Waits until the map has stopped
+  // moving for a moment, and drops an answer that a newer request has replaced.
+  const youKey = you ? `${you.lat.toFixed(4)},${you.lng.toFixed(4)}` : '';
+  useEffect(() => {
+    if (!mapView) return;
+    const radius = distance === 'ALL' ? null : Number(distance);
+    const statusParam = status === 'THIRSTY' ? 'thirsty' : status === 'HEALTHY' ? 'healthy' : 'all';
+    const zoom = Math.floor(mapView.zoom);
+    const common = { zoom, status: statusParam as 'all' | 'thirsty' | 'healthy', mine: status === 'MINE', v: pinsVersion };
+    // Rounded to about 10 m, so GPS jitter doesn't refetch
+    const params = radius && you ? { ...common, lat: Number(you.lat.toFixed(4)), lng: Number(you.lng.toFixed(4)), radius } : { ...common, bbox: snapToTiles(mapView) };
+    const controller = new AbortController();
+    const t = window.setTimeout(() => {
+      fetchTreePins(params, controller.signal).then(
+        (res) => {
+          setPins(res);
+          setNoTreesYet(res.empty);
+        },
+        () => {
+          // Keep the pins already on screen
+        }
+      );
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
+    // `you` is represented by youKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapView, status, distance, youKey, pinsVersion, userId]);
+
+  // Your own counts, refreshed with the lists
+  useEffect(() => {
+    if (!isSignedIn) {
+      setMyTreeSummary(null);
+      return;
+    }
+    browseTrees({ page: 1, limit: 1, mine: true }).then((res) => setMyTreeSummary(res.summary ?? null), () => {});
+  }, [isSignedIn, userId, listRefresh]);
 
   // ---- Drives (reloaded whenever we come back to the map, e.g. after an admin schedules one) ----
   const loadDrives = useCallback(() => {
@@ -297,28 +355,33 @@ function MapApp() {
     if (screen === 'map') loadDrives();
   }, [screen, loadDrives, role]);
 
-  // Sample trees only while the map would otherwise be empty
+  // Sample trees only while there are no real ones anywhere (they live in the browser, so they're filtered here)
   const sampleCenter = you ?? start;
-  const trees = useMemo<Tree[]>(() => {
-    if (serverTrees === null) return [];
-    if (serverTrees.length > 0) return serverTrees;
-    return sampleCenter ? sampleTreesAround(sampleCenter) : [];
+  const samples = useMemo<Tree[] | null>(
+    () => (noTreesYet && sampleCenter ? sampleTreesAround(sampleCenter) : null),
     // Place samples once, where you first are
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverTrees, Boolean(sampleCenter)]);
+    [noTreesYet, Boolean(sampleCenter)]
+  );
 
-  const filtered = useMemo(() => {
+  const filteredSamples = useMemo(() => {
+    if (!samples) return [];
     const radius = distance === 'ALL' ? null : Number(distance);
-    return trees.filter((t) => {
+    return samples.filter((t) => {
       if (status === 'THIRSTY' && treeStatus(t) !== 'thirsty') return false;
       if (status === 'HEALTHY' && treeStatus(t) !== 'healthy') return false;
       if (status === 'MINE' && !(userId && (t.userId === userId || t.owner?.id === userId))) return false;
       if (radius && you && getDistanceInMeters(you.lat, you.lng, t.latitude, t.longitude) > radius) return false;
       return true;
     });
-  }, [trees, status, distance, you, userId]);
+  }, [samples, status, distance, you, userId]);
 
-  const selectedTree = selection?.kind === 'tree' ? trees.find((t) => t.id === selection.id) ?? null : null;
+  const mapPins: PinsResult | null = samples ? { kind: 'trees', data: filteredSamples.map(pinFromTree), empty: false } : pins;
+
+  const selectedTree =
+    selection?.kind === 'tree'
+      ? samples?.find((t) => t.id === selection.id) ?? (selectedTreeData?.id === selection.id ? selectedTreeData : null)
+      : null;
   const selectedDrive = selection?.kind === 'drive' ? drives?.find((d) => d.id === selection.id) ?? null : null;
   // Pin upcoming drives (and a past one only while it's selected)
   const drivePins = useMemo(
@@ -326,13 +389,28 @@ function MapApp() {
     [drives, selectedDrive?.id]
   );
   const upcomingDrives = useMemo(() => (drives ? splitDrives(drives).upcoming.length : 0), [drives]);
-  const myTrees = useMemo(() => trees.filter((t) => userId && !isDemoTree(t) && (t.userId === userId || t.owner?.id === userId)), [trees, userId]);
 
   // ---- Selection and camera ----
+  // A tree we already have in full (from a list, or just planted)
   const selectTree = useCallback((tree: Tree) => {
+    setSelectedTreeData(tree);
     setSelection({ kind: 'tree', id: tree.id });
     setSheet('half');
     setFlyTo({ lat: tree.latitude, lng: tree.longitude, timestamp: Date.now() });
+  }, []);
+
+  // A pin tapped on the map: open it now, and load its full details
+  const selectPin = useCallback((pin: TreePin) => {
+    setSelection({ kind: 'tree', id: pin.id });
+    setSheet('half');
+    setFlyTo({ lat: pin.lat, lng: pin.lng, timestamp: Date.now() });
+    if (isDemoTree({ id: pin.id })) return;
+    fetchTreeById(pin.id).then(
+      (tree) => {
+        if (selectionRef.current?.kind === 'tree' && selectionRef.current.id === tree.id) setSelectedTreeData(tree);
+      },
+      () => {}
+    );
   }, []);
 
   const showDrive = useCallback((d: Drive) => {
@@ -490,7 +568,7 @@ function MapApp() {
         )}
         <NearbyPanel
           status={status}
-          samples={serverTrees !== null && serverTrees.length === 0 ? trees : null}
+          samples={samples}
           refreshKey={listRefresh}
           onTotal={setListTotal}
           you={you}
@@ -524,9 +602,11 @@ function MapApp() {
   return (
     <>
       <TreeMap
-        trees={filtered}
-        selectedTreeId={selectedTree?.id ?? null}
-        onSelectTree={selectTree}
+        pins={mapPins}
+        selectedTreeId={selection?.kind === 'tree' ? selection.id : null}
+        selectedPin={selectedTree ? pinFromTree(selectedTree) : null}
+        onSelectTree={selectPin}
+        onViewChange={setMapView}
         drives={drivePins}
         selectedDriveId={selectedDrive?.id ?? null}
         onSelectDrive={showDrive}
@@ -569,7 +649,7 @@ function MapApp() {
                 <div className="pointer-events-auto">
                   <ProfileDrawer
                     role={role}
-                    treesPlanted={myTrees.length}
+                    treesPlanted={myTreeSummary?.total ?? 0}
                     upcomingDrives={upcomingDrives}
                     onMyTrees={() => open('myTrees')}
                     onDrives={() => open('drives')}
@@ -680,7 +760,7 @@ function MapApp() {
         />
       )}
 
-      {screen === 'account' && <ProfilePage role={role} phone={phone} onPhoneChanged={setPhone} myTrees={myTrees} onClose={back} onProfileChanged={loadTrees} />}
+      {screen === 'account' && <ProfilePage role={role} phone={phone} onPhoneChanged={setPhone} myTreeSummary={myTreeSummary} onClose={back} onProfileChanged={loadTrees} />}
 
       {screen === 'drives' && (
         <DrivesPage

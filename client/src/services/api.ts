@@ -39,9 +39,40 @@ export const syncCurrentUser = async (): Promise<User> => {
   return res.data.data;
 };
 
-export const fetchAllTrees = async (): Promise<Tree[]> => {
-  const res = await api.get('/trees');
-  return res.data.data;
+/** One tree on the map: just enough to draw its pin. */
+export interface TreePin {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  needsWater: boolean;
+}
+
+/** Several trees close together, drawn as one bubble with a count. A cell with one tree carries its id. */
+export interface PinCluster {
+  lat: number;
+  lng: number;
+  count: number;
+  thirsty: number;
+  id?: string;
+  name?: string;
+}
+
+export type PinsResult = { kind: 'trees'; data: TreePin[]; empty: boolean } | { kind: 'clusters'; data: PinCluster[]; empty: boolean };
+
+/**
+ * What the map draws: pins in the visible area (`bbox` + `zoom`), or every tree within `radius` metres
+ * of you. Zoomed out, or with too many trees, the server sends clusters instead.
+ */
+export const fetchTreePins = async (
+  params: { bbox?: string; zoom: number; lat?: number; lng?: number; radius?: number; status: 'all' | 'thirsty' | 'healthy'; mine?: boolean; v?: number },
+  signal?: AbortSignal
+): Promise<PinsResult> => {
+  const res = await api.get('/trees/pins', {
+    params: { ...params, mine: params.mine ? 'true' : undefined, v: params.v || undefined },
+    signal,
+  });
+  return { kind: res.data.kind, data: res.data.data, empty: Boolean(res.data.empty) } as PinsResult;
 };
 
 export const fetchTreeById = async (id: string): Promise<Tree> => {

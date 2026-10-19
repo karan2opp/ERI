@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
 import { Camera, KeyRound, LogOut, Mail } from 'lucide-react';
-import type { Role, Tree } from '../types';
+import type { Role } from '../types';
 import { ROLE_LABEL } from '../lib/roles';
 import { PhoneSection } from '../components/PhoneSection';
 import { NotificationsSection } from '../components/NotificationsSection';
 import { syncCurrentUser } from '../services/api';
-import { treeStatus } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -31,14 +30,15 @@ export const ProfilePage: React.FC<{
   role: Role;
   phone: string | null;
   onPhoneChanged: (phone: string | null) => void;
-  myTrees: Tree[];
+  /** How many trees you planted, and how many of them need water */
+  myTreeSummary: { total: number; thirsty: number } | null;
   onClose: () => void;
   onProfileChanged: () => void;
 }> = ({
   role,
   phone,
   onPhoneChanged,
-  myTrees,
+  myTreeSummary,
   onClose,
   onProfileChanged,
 }) => {
@@ -145,7 +145,8 @@ export const ProfilePage: React.FC<{
     }
   };
 
-  const healthy = myTrees.filter((t) => treeStatus(t) === 'healthy').length;
+  const planted = myTreeSummary?.total ?? 0;
+  const healthy = Math.max(0, planted - (myTreeSummary?.thirsty ?? 0));
   const signInMethods = user.externalAccounts.map((a) => a.provider.replace(/^oauth_/, '')).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
 
   return (
@@ -175,7 +176,7 @@ export const ProfilePage: React.FC<{
       {photoNotice && <Alert tone={photoNotice.tone}>{photoNotice.text}</Alert>}
 
       <div className="grid grid-cols-2 gap-3">
-        <Stat value={myTrees.length} label={myTrees.length === 1 ? 'tree planted' : 'trees planted'} />
+        <Stat value={planted} label={planted === 1 ? 'tree planted' : 'trees planted'} />
         <Stat value={healthy} label="healthy right now" />
       </div>
 

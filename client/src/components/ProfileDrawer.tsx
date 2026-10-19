@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
-import { CalendarDays, ChevronRight, LogOut, Monitor, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
+import { CalendarDays, ChevronRight, LogOut, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
@@ -13,7 +13,6 @@ import { Chips } from './ui/chips';
 const THEMES: { value: ThemeChoice; label: string; icon: React.ReactNode }[] = [
   { value: 'light', label: 'Light', icon: <Sun className="size-4" aria-hidden="true" /> },
   { value: 'dark', label: 'Dark', icon: <Moon className="size-4" aria-hidden="true" /> },
-  { value: 'system', label: 'Device', icon: <Monitor className="size-4" aria-hidden="true" /> },
 ];
 
 const NavRow: React.FC<{ icon: React.ReactNode; label: string; hint?: string; onClick: () => void }> = ({ icon, label, hint, onClick }) => (

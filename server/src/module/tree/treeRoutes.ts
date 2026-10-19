@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import {
-  getAllTrees,
   getTreeById,
   createTree,
   updateTree,
   deleteTree,
   browseTrees
 } from './treeController';
+import { getTreePins } from './pinsController';
 import {
   addCareLog,
   getTreeCareHistory
@@ -33,9 +33,10 @@ const photoChecksLimiter = rateLimit({
 });
 
 // Public Map Routes
-router.get('/', getAllTrees);
 // Paged lists; before '/:id' so "browse" isn't read as an id
 router.get('/browse', browseTrees);
+// What the map draws: pins in view (or clusters when zoomed out), or every tree within a distance
+router.get('/pins', getTreePins);
 // A tree waiting for review is only shown to its owner and admins, so it needs to know who's asking
 router.get('/:id', optionalAuth, getTreeById);
 router.get('/:treeId/care', getTreeCareHistory);

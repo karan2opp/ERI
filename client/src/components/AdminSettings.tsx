@@ -64,7 +64,7 @@ export const AdminSettings: React.FC = () => {
         />
         <div className="flex items-start gap-3 py-4 text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-          <p className="text-sm">Photos from admins and super admins are never checked.</p>
+          <p className="text-sm">Photos from admins are never checked.</p>
         </div>
       </div>
 

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import type { Tree, Drive, LatLng } from '../../types';
-import { treeStatus, type TreeStatus } from '../../lib/trees';
+import type { Drive, LatLng } from '../../types';
+import type { TreeStatus } from '../../lib/trees';
+import type { PinCluster, PinsResult, TreePin } from '../../services/api';
+import type { MapView } from '../../lib/pins';
 import { useIsDark, useThemeColors } from '../../lib/theme';
 import type { TileSource } from '../../lib/tiles';
 import { GoogleCredit } from './MapCredit';
@@ -118,11 +120,12 @@ const CameraController: React.FC<{ flyTo: FlyToTarget | null; route: [number, nu
   return null;
 };
 
-const MapEvents: React.FC<{ pickMode: boolean; onCenterChange?: (c: LatLng) => void; onMapClick?: () => void }> = ({
-  pickMode,
-  onCenterChange,
-  onMapClick,
-}) => {
+const MapEvents: React.FC<{
+  pickMode: boolean;
+  onCenterChange?: (c: LatLng) => void;
+  onMapClick?: () => void;
+  onViewChange?: (view: MapView) => void;
+}> = ({ pickMode, onCenterChange, onMapClick, onViewChange }) => {
   const map = useMapEvents({
     move() {
       if (pickMode && onCenterChange) {
@@ -134,6 +137,23 @@ const MapEvents: React.FC<{ pickMode: boolean; onCenterChange?: (c: LatLng) => v
       if (!pickMode) onMapClick?.();
     },
   });
+
+  // Once the map stops moving, say what's in view, so the right pins load (and once at the start).
+  // Attached once with the latest callback in a ref: re-attaching on every render could miss a move
+  // made in the same update, like the jump to your first location.
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  useEffect(() => {
+    const report = () => {
+      const b = map.getBounds();
+      onViewChangeRef.current?.({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth(), zoom: map.getZoom() });
+    };
+    map.on('moveend', report);
+    report();
+    return () => {
+      map.off('moveend', report);
+    };
+  }, [map]);
 
   // Report the starting centre as soon as pick mode begins
   useEffect(() => {
@@ -157,10 +177,61 @@ const Route: React.FC<{ line: [number, number][] }> = ({ line }) => {
   );
 };
 
+// A bubble for several trees: the count, plus how many of them need water
+const clusterIcon = (count: number, thirsty: number) =>
+  L.divIcon({
+    html:
+      `<div class="pt-cluster" data-size="${count >= 1000 ? 'l' : count >= 100 ? 'm' : 's'}" role="button" aria-label="${count} trees${thirsty ? `, ${thirsty} need water` : ''}. Zoom in">` +
+      `<span>${count >= 10000 ? Math.round(count / 1000) + 'k' : count}</span>` +
+      (thirsty ? `<span class="pt-cluster-water">${thirsty >= 1000 ? Math.round(thirsty / 1000) + 'k' : thirsty}</span>` : '') +
+      '</div>',
+    className: 'pt-marker',
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+  });
+
+const TreePinMarker: React.FC<{ pin: TreePin; selected: boolean; onSelect: (pin: TreePin) => void }> = ({ pin, selected, onSelect }) => (
+  <Marker
+    position={[pin.lat, pin.lng]}
+    icon={pinIcon(pin.needsWater ? 'thirsty' : 'healthy', selected, pin.name)}
+    zIndexOffset={selected ? 500 : 0}
+    eventHandlers={{ click: () => onSelect(pin) }}
+    keyboard
+    title={pin.name}
+  />
+);
+
+/** Tapping a cluster zooms in on it, two levels at a time. */
+const ClusterMarker: React.FC<{ cluster: PinCluster }> = ({ cluster }) => {
+  const map = useMap();
+  return (
+    <Marker
+      position={[cluster.lat, cluster.lng]}
+      icon={clusterIcon(cluster.count, cluster.thirsty)}
+      // Centred in the part of the map you can see (above the sheet on phones)
+      eventHandlers={{
+        click: () => {
+          const zoom = Math.min(map.getZoom() + 2, 18);
+          map.setView(visibleCenter(cluster, zoom), zoom);
+        },
+      }}
+      // Above your own location dot, so the count stays readable
+      zIndexOffset={1100}
+      keyboard
+      title={`${cluster.count} trees`}
+    />
+  );
+};
+
 export interface TreeMapProps {
-  trees: Tree[];
+  /** What to draw: tree pins, or clusters when zoomed out (null while loading) */
+  pins: PinsResult | null;
   selectedTreeId: string | null;
-  onSelectTree: (tree: Tree) => void;
+  /** The selected tree, drawn even when it is inside a cluster */
+  selectedPin?: TreePin | null;
+  onSelectTree: (pin: TreePin) => void;
+  /** Called when the map stops moving, with what is in view */
+  onViewChange?: (view: MapView) => void;
   /** Drives to pin (the upcoming ones, plus whichever is selected): brown sprouts for plantation drives, purple bins for clean-ups */
   drives: Drive[];
   selectedDriveId: string | null;
@@ -191,9 +262,11 @@ export interface TreeMapProps {
 }
 
 export const TreeMap: React.FC<TreeMapProps> = ({
-  trees,
+  pins,
   selectedTreeId,
+  selectedPin = null,
   onSelectTree,
+  onViewChange,
   drives,
   selectedDriveId,
   onSelectDrive,
@@ -226,6 +299,19 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   }, [loadTiles, firstTilesIn]);
   const showTiles = Boolean(tiles) && loadTiles;
 
+  // Individual pins: the tree pins, the single-tree cells of a cluster answer, and the selected tree
+  // (so it stays visible even when its area is shown as a cluster)
+  const treePins: TreePin[] = [];
+  const clusters: PinCluster[] = [];
+  if (pins?.kind === 'trees') treePins.push(...pins.data);
+  else if (pins?.kind === 'clusters') {
+    for (const c of pins.data) {
+      if (c.count === 1 && c.id) treePins.push({ id: c.id, lat: c.lat, lng: c.lng, name: c.name ?? 'Tree', needsWater: c.thirsty > 0 });
+      else clusters.push(c);
+    }
+  }
+  if (selectedPin && !treePins.some((p) => p.id === selectedPin.id)) treePins.push(selectedPin);
+
   return (
     // isolate: Leaflet's panes use z-index up to 1000; keep them in their own stacking context
     <div className={`fixed inset-0 isolate bg-map ${dark && tiles?.invertInDark ? 'pt-tiles-invert' : ''}`}>
@@ -246,7 +332,7 @@ export const TreeMap: React.FC<TreeMapProps> = ({
         )}
 
         <CameraController flyTo={flyTo} route={route} />
-        <MapEvents pickMode={pickMode} onCenterChange={onCenterChange} onMapClick={onMapClick} />
+        <MapEvents pickMode={pickMode} onCenterChange={onCenterChange} onMapClick={onMapClick} onViewChange={onViewChange} />
 
         {userLocation && radiusMeters && (
           <Circle
@@ -258,18 +344,8 @@ export const TreeMap: React.FC<TreeMapProps> = ({
 
         {route && <Route line={route} />}
 
-        {!pickMode &&
-          trees.map((tree) => (
-            <Marker
-              key={tree.id}
-              position={[tree.latitude, tree.longitude]}
-              icon={pinIcon(treeStatus(tree), tree.id === selectedTreeId, tree.name)}
-              zIndexOffset={tree.id === selectedTreeId ? 500 : 0}
-              eventHandlers={{ click: () => onSelectTree(tree) }}
-              keyboard
-              title={tree.name}
-            />
-          ))}
+        {!pickMode && treePins.map((pin) => <TreePinMarker key={pin.id} pin={pin} selected={pin.id === selectedTreeId} onSelect={onSelectTree} />)}
+        {!pickMode && clusters.map((c) => <ClusterMarker key={`${c.lat},${c.lng},${c.count}`} cluster={c} />)}
 
         {!pickMode &&
           drives.map(

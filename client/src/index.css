@@ -207,6 +207,41 @@
 .pt-pin[data-status="healthy"] { background: var(--leaf); }
 .pt-pin[data-status="drive"] { background: var(--bark); }
 .pt-pin[data-status="cleanup"] { background: var(--cleanup); }
+
+/* Several trees in one bubble, with a blue badge for how many need water */
+.pt-cluster {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: 4px;
+  border-radius: 9999px;
+  background: var(--leaf);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  border: 3px solid var(--background);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--leaf) 28%, transparent), 0 2px 8px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+}
+.pt-cluster[data-size="m"] { width: 44px; height: 44px; margin: 2px; font-size: 13px; }
+.pt-cluster[data-size="l"] { width: 48px; height: 48px; margin: 0; font-size: 12px; }
+.pt-cluster-water {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  background: var(--thirsty);
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+  border: 2px solid var(--background);
+}
 .pt-pin[data-selected="true"] {
   transform: scale(1.25);
   box-shadow: 0 0 0 2px var(--foreground), var(--elev-float);

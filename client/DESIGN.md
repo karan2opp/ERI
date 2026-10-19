@@ -25,7 +25,7 @@ Defined in `src/index.css` as CSS variables and exposed to Tailwind via `@theme 
 
 Shadows: `shadow-float` for floating pills and buttons, `shadow-sheet` for sheets and cards over the map. Nothing else gets a shadow. No gradients.
 
-Theme is **Light by default**. People can pick Dark or Device on the Account page. `index.html` sets `<html data-theme>` before first paint; `dark:` styles key off `[data-theme="dark"]`.
+Theme is **Light by default**. People can pick Dark in the profile menu. `index.html` sets `<html data-theme>` before first paint; `dark:` styles key off `[data-theme="dark"]`.
 
 **Map tiles** are Google Maps (official Map Tiles API), proxied through the backend at `/api/v1/maps/tiles/...` so the API key stays secret. Google's terms require the Google logo and "Map data ©Google" on the map (`GoogleCredit`). If the backend can't serve Google tiles, the map falls back to CARTO (with `VITE_CARTO_API_KEY`) or OpenStreetMap.
 
