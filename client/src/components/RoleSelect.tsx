@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { Role, User } from '../types';
 import { setUserRole } from '../services/api';
-import { ROLE_LABEL, asRole } from '../lib/roles';
+import { ROLE_LABEL, asRole, isAdminRole } from '../lib/roles';
+import { useViewerRole } from '../lib/viewerRole';
 
-const ROLE_OPTIONS: Role[] = ['USER', 'TEAM_MEMBER', 'ADMIN'];
+const ROLE_OPTIONS: Role[] = ['USER', 'TEAM_MEMBER', 'ADMIN', 'SUPER_ADMIN'];
 
 /**
  * An admin's role picker for one user. It saves as soon as you choose and puts the old role back
@@ -14,7 +15,12 @@ export const RoleSelect: React.FC<{ user: Pick<User, 'id' | 'name' | 'email' | '
   isSelf,
   onError,
 }) => {
+  const viewer = useViewerRole();
   const [role, setRole] = useState<Role>(asRole(user.role));
+  // Admins choose between user and team member; only a super admin can make or change an admin
+  const superAdmin = viewer === 'SUPER_ADMIN';
+  const lockedForAdmin = !superAdmin && isAdminRole(role);
+  const choices = superAdmin ? ROLE_OPTIONS : ROLE_OPTIONS.filter((r) => !isAdminRole(r) || r === role);
   const [saving, setSaving] = useState(false);
 
   const change = async (next: Role) => {
@@ -36,12 +42,12 @@ export const RoleSelect: React.FC<{ user: Pick<User, 'id' | 'name' | 'email' | '
     <select
       value={role}
       onChange={(e) => change(e.target.value as Role)}
-      disabled={isSelf || saving}
+      disabled={isSelf || lockedForAdmin || saving}
       aria-label={`Role for ${user.name || user.email}`}
-      title={isSelf ? "You can't change your own role" : undefined}
+      title={isSelf ? "You can't change your own role" : lockedForAdmin ? 'Only a super admin can change an admin' : undefined}
       className="h-10 cursor-pointer rounded-full bg-secondary px-3 text-[15px] font-medium text-secondary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {ROLE_OPTIONS.map((r) => (
+      {choices.map((r) => (
         <option key={r} value={r}>
           {ROLE_LABEL[r]}
         </option>

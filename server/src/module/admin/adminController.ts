@@ -5,7 +5,8 @@ import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'd
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { isUuid } from '../../common/utils/validation';
 import { z } from 'zod';
-import { ROLES } from '../../common/auth/roles';
+import { ROLES, isAdminRole } from '../../common/auth/roles';
+import { getSettings, updateSettings } from '../../common/services/settingsService';
 import { needsWater } from '../../common/utils/careSchedule';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 
@@ -140,9 +141,10 @@ export const getAdminTrees = async (req: Request, res: Response) => {
 };
 
 /**
- * PATCH /admin/users/:id/role  { role: "USER" | "TEAM_MEMBER" | "ADMIN" }
- * Admins promote and demote people here. You can't change your own role, so there is always
- * at least one admin left.
+ * PATCH /admin/users/:id/role  { role: "USER" | "TEAM_MEMBER" | "ADMIN" | "SUPER_ADMIN" }
+ * Admins promote and demote people between user and team member. Making someone an admin or super
+ * admin, or changing one, needs a super admin. You can't change your own role, so there is always
+ * someone left at the top.
  */
 export const setUserRole = async (req: AuthenticatedRequest, res: Response) => {
   const parsed = z.object({ role: z.enum(ROLES) }).safeParse(req.body);
@@ -154,6 +156,11 @@ export const setUserRole = async (req: AuthenticatedRequest, res: Response) => {
     return res.status(400).json({ success: false, error: "You can't change your own role" });
   }
   try {
+    const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, id));
+    if (!target) return res.status(404).json({ success: false, error: 'User not found' });
+    if ((isAdminRole(parsed.data.role) || isAdminRole(target.role)) && req.userRole !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, error: 'Only a super admin can make someone an admin or change an admin' });
+    }
     const [updated] = await db.update(users).set({ role: parsed.data.role, updatedAt: new Date() }).where(eq(users.id, id)).returning();
     if (!updated) return res.status(404).json({ success: false, error: 'User not found' });
     res.status(200).json({ success: true, data: updated });
@@ -296,5 +303,32 @@ export const reviewTree = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error reviewing tree:', error);
     res.status(500).json({ success: false, error: 'Failed to review the tree' });
+  }
+};
+
+/** GET /admin/settings: the app-wide switches (admins and super admins only). */
+export const getAppSettings = async (_req: Request, res: Response) => {
+  try {
+    res.status(200).json({ success: true, data: await getSettings() });
+  } catch (error) {
+    console.error('Error loading settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to load the settings' });
+  }
+};
+
+/** PATCH /admin/settings  { verifyUserPhotos?, verifyTeamPhotos? }: choose whose tree photos go to the AI check. */
+export const setAppSettings = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z
+    .object({ verifyUserPhotos: z.boolean().optional(), verifyTeamPhotos: z.boolean().optional() })
+    .refine((v) => v.verifyUserPhotos !== undefined || v.verifyTeamPhotos !== undefined, 'Send at least one setting')
+    .safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: 'verifyUserPhotos and verifyTeamPhotos must be true or false' });
+  }
+  try {
+    res.status(200).json({ success: true, data: await updateSettings(parsed.data, req.userId!) });
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to save the settings' });
   }
 };

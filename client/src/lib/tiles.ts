@@ -47,6 +47,17 @@ const fallback = (dark: boolean): TileSource =>
         invertInDark: true,
       };
 
+// Whether Google tiles worked last time, so the next visit can start loading them straight away
+const GOOGLE_OK_KEY = 'plantree.googleTiles';
+const rememberedGoogle = (): boolean | null => {
+  try {
+    const value = localStorage.getItem(GOOGLE_OK_KEY);
+    return value === null ? null : value === '1';
+  } catch {
+    return null;
+  }
+};
+
 // Ask the backend once per page load whether Google tiles work
 let googleAvailable: Promise<boolean> | null = null;
 const checkGoogle = () =>
@@ -55,16 +66,27 @@ const checkGoogle = () =>
     .then((res) => Boolean(res.data?.data?.available))
     .catch(() => false));
 
-/** The tile source to use: Google when available, otherwise the fallback. */
-export function useTileSource(dark: boolean): TileSource | null {
-  const [useGoogle, setUseGoogle] = useState<boolean | null>(null);
+/**
+ * The tile source to use: Google when available, otherwise the fallback. It doesn't wait for the
+ * status check: it starts with what worked last time (Google on a first visit) and switches if the
+ * check, which runs in the background, says otherwise.
+ */
+export function useTileSource(dark: boolean): TileSource {
+  const [useGoogle, setUseGoogle] = useState<boolean>(() => rememberedGoogle() ?? true);
   useEffect(() => {
     let cancelled = false;
-    checkGoogle().then((ok) => !cancelled && setUseGoogle(ok));
+    checkGoogle().then((ok) => {
+      if (cancelled) return;
+      setUseGoogle(ok);
+      try {
+        localStorage.setItem(GOOGLE_OK_KEY, ok ? '1' : '0');
+      } catch {
+        // Storage blocked: we'll just check again next time
+      }
+    });
     return () => {
       cancelled = true;
     };
   }, []);
-  if (useGoogle === null) return null; // still checking: show the plain map background
   return useGoogle ? google(dark) : fallback(dark);
 }

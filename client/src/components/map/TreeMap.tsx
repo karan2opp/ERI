@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import type { Tree, Drive, LatLng } from '../../types';
@@ -7,9 +7,12 @@ import { useIsDark, useThemeColors } from '../../lib/theme';
 import type { TileSource } from '../../lib/tiles';
 import { GoogleCredit } from './MapCredit';
 import { LiveMapOverlay } from '../LiveMapOverlay';
+import { Spinner } from '../ui/spinner';
 
 export interface FlyToTarget extends LatLng {
   zoom?: number;
+  /** Jump straight there instead of flying (a fly loads tiles at every zoom level on the way) */
+  instant?: boolean;
   /** Changes every request, so asking twice for the same spot still moves the map. */
   timestamp: number;
 }
@@ -83,10 +86,12 @@ const isPhone = () => window.innerWidth < 768;
  * Where to centre the map so `target` lands in the middle of the part you can see:
  * above the bottom sheet on phones, right of the side panel on wider screens.
  */
-function visibleCenter(map: L.Map, target: LatLng, zoom: number): L.LatLng {
-  const point = map.project([target.lat, target.lng], zoom);
+function visibleCenter(target: LatLng, zoom: number): L.LatLng {
+  // Same projection as the map, so this also works before the map exists (for its first view)
+  const crs = L.CRS.EPSG3857;
+  const point = crs.latLngToPoint(L.latLng(target.lat, target.lng), zoom);
   const shift = isPhone() ? L.point(0, window.innerHeight * 0.23) : L.point(-208, 0);
-  return map.unproject(point.add(shift), zoom);
+  return crs.pointToLatLng(point.add(shift), zoom);
 }
 
 const CameraController: React.FC<{ flyTo: FlyToTarget | null; route: [number, number][] | null }> = ({ flyTo, route }) => {
@@ -95,7 +100,8 @@ const CameraController: React.FC<{ flyTo: FlyToTarget | null; route: [number, nu
   useEffect(() => {
     if (!flyTo) return;
     const zoom = flyTo.zoom ?? Math.max(map.getZoom(), 16);
-    map.flyTo(visibleCenter(map, flyTo, zoom), zoom, { duration: 0.8 });
+    if (flyTo.instant) map.setView(visibleCenter(flyTo, zoom), zoom, { animate: false });
+    else map.flyTo(visibleCenter(flyTo, zoom), zoom, { duration: 0.8 });
   }, [flyTo?.timestamp, map]);
 
   // Show the whole walk once a route arrives
@@ -175,6 +181,13 @@ export interface TreeMapProps {
   initialZoom?: number;
   /** null while we're still finding out which tiles to use */
   tiles: TileSource | null;
+  /**
+   * False while we're still finding out where you are, so no tiles load for a place we're about to
+   * leave (a first visit would otherwise load all of India, then your street)
+   */
+  loadTiles?: boolean;
+  /** False until we know where you are (or gave up waiting): the loading card stays until then */
+  located?: boolean;
 }
 
 export const TreeMap: React.FC<TreeMapProps> = ({
@@ -197,15 +210,40 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   initialCenter,
   initialZoom = 15,
   tiles,
+  loadTiles = true,
+  located = true,
 }) => {
   const dark = useIsDark();
   const colors = useThemeColors();
 
+  // Cover the map with a loading card until the first screenful of tiles is in. If tiles fail or
+  // are very slow, give up on the card after a while so it never sits there for good.
+  const [firstTilesIn, setFirstTilesIn] = useState(false);
+  useEffect(() => {
+    if (!loadTiles || firstTilesIn) return;
+    const t = window.setTimeout(() => setFirstTilesIn(true), 15_000);
+    return () => clearTimeout(t);
+  }, [loadTiles, firstTilesIn]);
+  const showTiles = Boolean(tiles) && loadTiles;
+
   return (
     // isolate: Leaflet's panes use z-index up to 1000; keep them in their own stacking context
     <div className={`fixed inset-0 isolate bg-map ${dark && tiles?.invertInDark ? 'pt-tiles-invert' : ''}`}>
-      <MapContainer center={[initialCenter.lat, initialCenter.lng]} zoom={initialZoom} zoomControl={false} className="h-full w-full">
-        {tiles && <TileLayer key={tiles.url} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} maxNativeZoom={tiles.maxZoom} subdomains={tiles.subdomains} />}
+      {/* Open with the same view a location jump gives (you above the sheet), so the first GPS fix doesn't shift or zoom it */}
+      <MapContainer center={visibleCenter(initialCenter, initialZoom)} zoom={initialZoom} zoomControl={false} className="h-full w-full">
+        {showTiles && tiles && (
+          <TileLayer
+            key={tiles.url}
+            url={tiles.url}
+            attribution={tiles.attribution}
+            maxZoom={tiles.maxZoom}
+            maxNativeZoom={tiles.maxZoom}
+            subdomains={tiles.subdomains}
+            // Only the tiles for where the map ends up, not every zoom level it passes through
+            updateWhenZooming={false}
+            eventHandlers={{ load: () => setFirstTilesIn(true) }}
+          />
+        )}
 
         <CameraController flyTo={flyTo} route={route} />
         <MapEvents pickMode={pickMode} onCenterChange={onCenterChange} onMapClick={onMapClick} />
@@ -263,6 +301,25 @@ export const TreeMap: React.FC<TreeMapProps> = ({
         )}
         {userLocation && <Marker position={[userLocation.lat, userLocation.lng]} icon={youIcon(userHeading)} interactive={false} zIndexOffset={1000} />}
       </MapContainer>
+      {/* 1. Finding you: the map stays covered (tiles keep loading underneath), so it never shows somewhere else first */}
+      {!located && (
+        <div className="absolute inset-0 z-[450] flex items-start justify-center bg-map px-4 pt-[30vh] md:pl-[26rem]">
+          <div role="status" className="flex items-center gap-3 rounded-full bg-card px-5 py-3 font-medium shadow-float">
+            <Spinner className="size-5" />
+            Finding where you are…
+          </div>
+        </div>
+      )}
+      {/* 2. Found you, tiles still coming in: the map shows, with a small card on top */}
+      {located && !firstTilesIn && (
+        // pointer-events-none: the map and its controls keep working underneath
+        <div className="pointer-events-none absolute inset-x-0 top-[30%] z-[450] flex justify-center px-4 md:left-[26rem]">
+          <div role="status" className="flex items-center gap-3 rounded-full bg-card px-5 py-3 font-medium shadow-float">
+            <Spinner className="size-5" />
+            Loading the map…
+          </div>
+        </div>
+      )}
       {/* On wider screens the credit sits beside the side panel; on phones the sheet carries it */}
       {tiles?.google && <GoogleCredit dark={dark} className="fixed bottom-2 left-[26.5rem] z-[500] max-md:hidden" />}
     </div>

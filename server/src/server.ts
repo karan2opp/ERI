@@ -15,6 +15,7 @@ import userRoutes from './module/user/userRoutes';
 import treeRoutes from './module/tree/treeRoutes';
 import adminRoutes from './module/admin/adminRoutes';
 import driveRoutes from './module/drive/driveRoutes';
+import notificationRoutes from './module/notification/notificationRoutes';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
 
@@ -63,6 +64,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/trees', treeRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/drives', driveRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);

@@ -4,6 +4,7 @@ import { Camera, KeyRound, LogOut, Mail } from 'lucide-react';
 import type { Role, Tree } from '../types';
 import { ROLE_LABEL } from '../lib/roles';
 import { PhoneSection } from '../components/PhoneSection';
+import { NotificationsSection } from '../components/NotificationsSection';
 import { syncCurrentUser } from '../services/api';
 import { treeStatus } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
@@ -197,6 +198,8 @@ export const ProfilePage: React.FC<{
 
       {/* Phone number (optional, not verified) */}
       <PhoneSection phone={phone} onSaved={onPhoneChanged} />
+
+      <NotificationsSection />
 
       {/* Email and sign-in methods (read-only) */}
       <section className="flex flex-col gap-3" aria-labelledby="email-heading">

@@ -9,7 +9,7 @@ import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
 import { sampleTreesAround } from './lib/demo';
 import { useWalkingRoute } from './lib/route';
 import { useHeading } from './lib/heading';
-import { asRole, canSeeTeamDrives } from './lib/roles';
+import { asRole, canSeeTeamDrives, isAdminRole } from './lib/roles';
 import { formatDriveDate, isUpcoming, splitDrives } from './lib/drives';
 import { cn } from './lib/cn';
 import { useIsDark } from './lib/theme';
@@ -105,6 +105,12 @@ function MapApp() {
   const youHeading = useHeading(gpsHeading);
   const [locError, setLocError] = useState<string | null>(null);
   const [start] = useState<LatLng | null>(readLastLocation);
+  // The first location fix, a location error, or giving up waiting, whichever comes first. Until then the
+  // map shows a loading card, so the map and your marker appear together.
+  const [located, setLocated] = useState(false);
+  // Load tiles straight away if we remember where you were (most likely the same tiles), otherwise only
+  // once we know where to show, so a first visit doesn't load all of India and then your street
+  const mapReady = start !== null || located;
   const [flyTo, setFlyTo] = useState<FlyToTarget | null>(null);
 
   const [status, setStatus] = useState<StatusFilter>('ALL');
@@ -152,53 +158,121 @@ function MapApp() {
   }, [isSignedIn, userId]);
 
   // ---- Your location: follow it; the first fix centres the map ----
+  // Bumping this restarts the search for your location (the "Try again" button, or location being allowed later)
+  const [locationAttempt, setLocationAttempt] = useState(0);
+  // Whether we've had any position yet this visit: the first one moves the map to you
+  const hadFix = useRef(false);
+
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocError("This browser can't share your location.");
+      setLocated(true);
       return;
     }
-    let first = true;
+    let cancelled = false;
+    // A precise GPS fix replaces the quick rough one, never the other way round
+    let gotPrecise = false;
+    const giveUp = window.setTimeout(() => setLocated(true), 2500);
+
+    const apply = (pos: GeolocationPosition) => {
+      if (cancelled) return;
+      const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      setYou(at);
+      setYouAccuracy(pos.coords.accuracy);
+      // Standing still, GPS reports no direction: keep the last one instead of dropping the cone
+      if (pos.coords.heading !== null && Number.isFinite(pos.coords.heading)) setGpsHeading(pos.coords.heading);
+      setLocError(null);
+      try {
+        localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(at));
+      } catch {
+        // Storage blocked: we just won't remember it
+      }
+      if (!hadFix.current) {
+        hadFix.current = true;
+        // Jump, don't fly: flying from a zoomed-out view loads tiles at every zoom level on the way.
+        // If you're where we remembered (the map already opened there), don't move it at all.
+        const moved = !start || getDistanceInMeters(start.lat, start.lng, at.lat, at.lng) > 30;
+        if (moved) setFlyTo({ ...at, zoom: 16, instant: true, timestamp: Date.now() });
+        setLocated(true);
+      }
+    };
+
+    // Each kind of failure gets its own message. Only "blocked" is final: for the others the watch
+    // below keeps trying by itself, so the message says so.
+    const fail = (err: GeolocationPositionError) => {
+      if (cancelled) return;
+      setLocated(true);
+      if (err.code === err.PERMISSION_DENIED) {
+        setLocError('Location access is blocked. Allow it for this site in your browser settings to see the trees nearest you.');
+      } else if (err.code === err.TIMEOUT) {
+        setLocError('Your location is taking a while, which is common indoors. Still trying…');
+      } else {
+        setLocError("We can't find your location right now. Check that location is on. Still trying…");
+      }
+    };
+
+    // 1. A quick rough position from Wi-Fi or the mobile network, so the map can show you in a moment
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!gotPrecise) apply(pos);
+      },
+      () => {
+        // Ignore: the precise watch below reports its own errors
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 }
+    );
+
+    // 2. Precise GPS, followed as you move. After a timeout or a lost signal the browser keeps trying.
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setYou(at);
-        setYouAccuracy(pos.coords.accuracy);
-        // Standing still, GPS reports no direction: keep the last one instead of dropping the cone
-        if (pos.coords.heading !== null && Number.isFinite(pos.coords.heading)) setGpsHeading(pos.coords.heading);
-        setLocError(null);
-        try {
-          localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(at));
-        } catch {
-          // Storage blocked: we just won't remember it
-        }
-        if (first) {
-          first = false;
-          setFlyTo({ ...at, zoom: 16, timestamp: Date.now() });
-        }
+        gotPrecise = true;
+        apply(pos);
       },
-      () => setLocError('Location is off. Turn it on to see the trees nearest you.'),
+      (err) => {
+        fail(err);
+        // Blocked: the browser won't try again, so stop watching (allowing it later restarts this)
+        if (err.code === err.PERMISSION_DENIED) navigator.geolocation.clearWatch(id);
+      },
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 10_000 }
     );
-    return () => navigator.geolocation.clearWatch(id);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(giveUp);
+      navigator.geolocation.clearWatch(id);
+    };
+    // `start` is read once on load and never changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationAttempt]);
+
+  // Start looking again by itself if location is allowed later (e.g. in the browser's site settings)
+  useEffect(() => {
+    let status: PermissionStatus | null = null;
+    const onChange = () => {
+      if (status?.state === 'granted') setLocationAttempt((n) => n + 1);
+    };
+    navigator.permissions
+      ?.query({ name: 'geolocation' })
+      .then((s) => {
+        status = s;
+        s.addEventListener('change', onChange);
+      })
+      .catch(() => {
+        // This browser can't tell us; the Try again button still works
+      });
+    return () => status?.removeEventListener('change', onChange);
   }, []);
 
+  const retryLocation = useCallback(() => {
+    setLocError(null);
+    setLocationAttempt((n) => n + 1);
+  }, []);
+
+  // The locate button: go to you, or start looking again if we don't know where you are
   const locate = useCallback(() => {
-    if (you) {
-      setFlyTo({ ...you, zoom: 16, timestamp: Date.now() });
-      return;
-    }
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => {
-        const at = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setYou(at);
-        setYouAccuracy(pos.coords.accuracy);
-        setLocError(null);
-        setFlyTo({ ...at, zoom: 16, timestamp: Date.now() });
-      },
-      () => setLocError('Location is off. Turn it on to see the trees nearest you.'),
-      { enableHighAccuracy: true, timeout: 10_000 }
-    );
-  }, [you]);
+    if (you) setFlyTo({ ...you, zoom: 16, timestamp: Date.now() });
+    else retryLocation();
+  }, [you, retryLocation]);
 
   // ---- Trees ----
   // The map's pins load every tree; lists page on the server and reload when listRefresh changes
@@ -410,7 +484,7 @@ function MapApp() {
     sheetBody = (
       <>
         {locError && !you && (
-          <Alert tone="info" className="mb-4" action={<Button variant="secondary" onClick={locate}>Try again</Button>}>
+          <Alert tone="info" className="mb-4" action={<Button variant="secondary" onClick={retryLocation}>Try again</Button>}>
             {locError}
           </Alert>
         )}
@@ -467,8 +541,10 @@ function MapApp() {
         onMapClick={onMapClick}
         liveRoom={liveRoom}
         initialCenter={start ?? INDIA}
-        initialZoom={start ? 15 : 5}
+        initialZoom={start ? 16 : 5}
         tiles={tiles}
+        loadTiles={mapReady}
+        located={located}
       />
 
       {picking ? (
@@ -618,8 +694,9 @@ function MapApp() {
         />
       )}
 
-      {screen === 'admin' && (
+      {screen === 'admin' && isAdminRole(role) && (
         <AdminPage
+          role={role}
           you={you}
           onClose={back}
           onShowDriveOnMap={(d) => {

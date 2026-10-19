@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAdminStats, getAdminUsers, getAdminUser, getAdminUserCare, getAdminTrees, getPendingTrees, reviewTree, setUserRole } from './adminController';
+import { getAdminStats, getAdminUsers, getAdminUser, getAdminUserCare, getAdminTrees, getPendingTrees, reviewTree, setUserRole, getAppSettings, setAppSettings } from './adminController';
 import { requireAuth, requireAdmin } from '../../common/middlewares/authMiddleware';
 
 const router = Router();
@@ -8,6 +8,8 @@ router.use(requireAuth, requireAdmin);
 
 router.get('/stats', getAdminStats);
 router.get('/users', getAdminUsers);
+router.get('/settings', getAppSettings);
+router.patch('/settings', setAppSettings);
 router.get('/trees', getAdminTrees);
 // Before any '/trees/:id' route so "pending" isn't read as an id
 router.get('/trees/pending', getPendingTrees);

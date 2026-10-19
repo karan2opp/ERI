@@ -138,7 +138,23 @@ export const fetchAdminStats = async () => {
   return res.data;
 };
 
-/** Admin: change someone's role (USER, TEAM_MEMBER or ADMIN). */
+/** Whose tree photos go to the AI photo check (admins and super admins are never checked). */
+export interface AppSettings {
+  verifyUserPhotos: boolean;
+  verifyTeamPhotos: boolean;
+}
+
+export const fetchAppSettings = async (): Promise<AppSettings> => {
+  const res = await api.get('/admin/settings');
+  return res.data.data;
+};
+
+export const updateAppSettings = async (patch: Partial<AppSettings>): Promise<AppSettings> => {
+  const res = await api.patch('/admin/settings', patch);
+  return res.data.data;
+};
+
+/** Admin: change someone's role. Making an admin or super admin, or changing one, needs a super admin. */
 export const setUserRole = async (userId: string, role: Role): Promise<User> => {
   const res = await api.patch(`/admin/users/${userId}/role`, { role });
   return res.data.data;
@@ -229,26 +245,67 @@ export const getDriveById = async (id: string) => {
   return res.data;
 };
 
-export const createGlobalDrive = async (data: {
+/** Who is told about a drive by email and push notification. */
+export type NotifyAudience = 'NONE' | 'TEAM' | 'EVERYONE';
+
+/** How many people the server is telling about a drive change (it sends in the background). */
+export interface Notifying {
+  audience: NotifyAudience;
+  emails: number;
+  devices: number;
+}
+
+export interface DriveFields {
   title: string;
   description: string;
   date: string;
   time: string;
-  latitude?: number;
-  longitude?: number;
+  latitude: number;
+  longitude: number;
   address: string;
-  googleMapsUrl?: string;
+  googleMapsUrl: string;
   type: DriveType;
   visibility: DriveVisibility;
-}) => {
+}
+
+export const createGlobalDrive = async (data: Omit<DriveFields, 'googleMapsUrl'> & { googleMapsUrl?: string; notify: NotifyAudience }): Promise<{ data: Drive; notifying?: Notifying }> => {
   const res = await api.post(`/drives`, data);
   return res.data;
 };
 
-/** Admin: change what kind of drive it is, or who can see it. */
-export const updateDriveSettings = async (id: string, settings: { type?: DriveType; visibility?: DriveVisibility }): Promise<Drive> => {
-  const res = await api.patch(`/drives/${id}`, settings);
+/** Admin: change anything about a drive. `notify` tells people about the change. */
+export const updateDrive = async (id: string, changes: Partial<DriveFields> & { notify?: NotifyAudience }): Promise<{ drive: Drive; notifying?: Notifying }> => {
+  const res = await api.patch(`/drives/${id}`, changes);
+  return { drive: res.data.data, notifying: res.data.notifying };
+};
+
+/** Admin: delete a drive, and optionally tell people it is cancelled. */
+export const deleteDrive = async (id: string, notify: NotifyAudience = 'NONE'): Promise<Notifying | undefined> => {
+  const res = await api.delete(`/drives/${id}`, { params: { notify } });
+  return res.data.notifying;
+};
+
+// ---- Notifications (email and push)
+export const fetchNotificationConfig = async (): Promise<{ push: boolean; publicKey: string | null; email: boolean }> => {
+  const res = await api.get('/notifications/config');
   return res.data.data;
+};
+
+export const fetchNotificationPreferences = async (): Promise<{ emailDrives: boolean; pushDevices: number }> => {
+  const res = await api.get('/notifications/preferences');
+  return res.data.data;
+};
+
+export const setEmailDrives = async (emailDrives: boolean) => {
+  await api.put('/notifications/preferences', { emailDrives });
+};
+
+export const subscribePush = async (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) => {
+  await api.post('/notifications/push/subscribe', subscription);
+};
+
+export const unsubscribePush = async (endpoint: string) => {
+  await api.post('/notifications/push/unsubscribe', { endpoint });
 };
 
 // Maps & Geocoding APIs (Proxied through backend using Google Maps)

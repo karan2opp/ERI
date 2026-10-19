@@ -13,6 +13,7 @@ import {
   getTreeCareHistory
 } from '../care/careController';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
+import { photoNeedsCheck } from '../../common/services/settingsService';
 import { uploadSingleImage } from '../../common/middlewares/uploadMiddleware';
 
 const router = Router();
@@ -24,6 +25,8 @@ const photoChecksLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Runs after requireAuth, so it is per person, not per network
+  // Photos that aren't sent to the AI cost nothing, so they aren't limited
+  skip: async (req) => !(await photoNeedsCheck((req as AuthenticatedRequest).userRole)),
   keyGenerator: (req) => (req as AuthenticatedRequest).userId ?? 'anonymous',
   validate: { keyGeneratorIpFallback: false },
   message: { success: false, error: 'You have sent a lot of photos in the last hour. Try again a bit later.' },

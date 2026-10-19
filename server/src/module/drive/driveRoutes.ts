@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { createDrive, getDrives, getDriveById, getDriveCalendar, updateDriveSettings } from './driveController';
+import { createDrive, getDrives, getDriveById, getDriveCalendar, updateDrive, deleteDrive } from './driveController';
 import { requireAuth, requireAdmin, optionalAuth } from '../../common/middlewares/authMiddleware';
 
 const router = Router();
 
 // Scheduling and changing a drive needs an admin
 router.post('/', requireAuth, requireAdmin, createDrive);
-router.patch('/:id', requireAuth, requireAdmin, updateDriveSettings);
+router.patch('/:id', requireAuth, requireAdmin, updateDrive);
+router.delete('/:id', requireAuth, requireAdmin, deleteDrive);
 
 // Reading depends on who's asking: drives for everyone are open to anyone (even signed out),
 // team-only drives need a team member or admin, and admins see all. The controller applies that.

@@ -26,6 +26,20 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default('gpt-4o-mini'),
 
+  // Email (Resend, https://resend.com): drive emails. Without these, nothing is emailed.
+  RESEND_API_KEY: z.string().optional(),
+  // e.g. "Earth Revival Initiative <drives@yourdomain.com>" (the domain has to be verified in Resend)
+  EMAIL_FROM: z.string().optional(),
+  RESEND_BASE_URL: z.string().default('https://api.resend.com'),
+  // The app's public address, used for links in emails and notifications (defaults to the first CLIENT_ORIGIN)
+  APP_URL: z.string().optional(),
+
+  // Web push notifications. Make keys with: npx web-push generate-vapid-keys
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  // A mailto: or https: contact for the push services
+  VAPID_SUBJECT: z.string().default('mailto:noreply@example.com'),
+
   // Google Maps API
   GOOGLE_MAP_API: z.string().optional(),
 });

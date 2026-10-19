@@ -1,28 +1,28 @@
 import { useEffect, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
-import type { Drive, DriveType, DriveVisibility, LatLng, Tree, User } from '../types';
-import { createGlobalDrive, fetchAdminStats, fetchAdminUsers } from '../services/api';
+import type { Drive, LatLng, Role, Tree, User } from '../types';
+import { fetchAdminStats, fetchAdminUsers } from '../services/api';
+import { DriveForm, notifyMessage } from '../components/DriveForm';
 import { AdminReview } from '../components/AdminReview';
+import { AdminSettings } from '../components/AdminSettings';
+import { ViewerRoleContext } from '../lib/viewerRole';
 import { useUser } from '@clerk/react';
 import { formatPhone } from '../lib/phone';
 import { RoleSelect } from '../components/RoleSelect';
 import { AdminUserProfile } from '../components/AdminUserProfile';
-import { geocodeLocation } from '../utils/geo';
 import { timeAgo } from '../lib/trees';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Chips } from '../components/ui/chips';
-import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
-import { MiniMap } from '../components/MiniMap';
 import { DriveView } from '../components/DriveView';
 import { DrivesBrowser } from '../components/DrivesBrowser';
 import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
-type Tab = 'overview' | 'drives' | 'trees' | 'review' | 'users';
+type Tab = 'overview' | 'drives' | 'trees' | 'review' | 'users' | 'settings';
 
 const TABS = [
   { value: 'overview' as const, label: 'Overview' },
@@ -30,10 +30,8 @@ const TABS = [
   { value: 'trees' as const, label: 'Trees' },
   { value: 'review' as const, label: 'Review' },
   { value: 'users' as const, label: 'Users' },
+  { value: 'settings' as const, label: 'Settings' },
 ];
-
-// Mumbai, when we don't know where you are
-const FALLBACK_CENTER: LatLng = { lat: 19.076, lng: 72.8777 };
 
 const SearchBox: React.FC<{ value: string; onChange: (v: string) => void; placeholder: string }> = ({ value, onChange, placeholder }) => (
   <div className="relative">
@@ -163,143 +161,19 @@ const UsersList: React.FC<{ onShowTreeOnMap: (t: Tree) => void }> = ({ onShowTre
   );
 };
 
-const DriveForm: React.FC<{ you: LatLng | null; onDone: () => void }> = ({ you, onDone }) => {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [address, setAddress] = useState('');
-  const [mapsUrl, setMapsUrl] = useState('');
-  const [type, setType] = useState<DriveType>('PLANTATION');
-  // Team only unless chosen otherwise, so a drive is never public by accident
-  const [visibility, setVisibility] = useState<DriveVisibility>('TEAM');
-  const [center, setCenter] = useState<LatLng>(you ?? FALLBACK_CENTER);
-  const [recenter, setRecenter] = useState(0);
-  const [place, setPlace] = useState('');
-  const [finding, setFinding] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const findPlace = async () => {
-    if (!place.trim()) return;
-    setFinding(true);
-    const found = await geocodeLocation(place.trim());
-    setFinding(false);
-    if (found) {
-      setCenter(found);
-      setRecenter((r) => r + 1);
-      if (!address) setAddress(place.trim());
-    } else {
-      setError(`Couldn't find "${place.trim()}". Try a nearby landmark.`);
-    }
-  };
-
-  const blocker = !title.trim() ? 'Add a title to continue' : !date || !time ? 'Choose a date and time' : !description.trim() ? 'Say what volunteers will do' : null;
-
-  const submit = async () => {
-    if (blocker) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await createGlobalDrive({
-        title: title.trim(),
-        description: description.trim(),
-        date,
-        time,
-        address: address.trim(),
-        googleMapsUrl: mapsUrl.trim() || undefined,
-        latitude: center.lat,
-        longitude: center.lng,
-        type,
-        visibility,
-      });
-      onDone();
-    } catch (err) {
-      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(message || "Couldn't schedule the drive. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Field label="Kind of drive">
-        <Chips
-          label="Kind of drive"
-          value={type}
-          onChange={setType}
-          options={[{ value: 'PLANTATION', label: 'Plantation drive' }, { value: 'CLEANUP', label: 'Clean-up drive' }]}
-          className="flex-wrap"
-        />
-      </Field>
-      <Field label="Who can see it" description={visibility === 'ALL' ? 'Everyone, including people who are not signed in.' : 'Only team members and admins. Admins always see every drive.'}>
-        <Chips
-          label="Who can see it"
-          value={visibility}
-          onChange={setVisibility}
-          options={[{ value: 'TEAM', label: 'Team only' }, { value: 'ALL', label: 'Everyone' }]}
-          className="flex-wrap"
-        />
-      </Field>
-      <Field label="Title" htmlFor="drive-title">
-        <Input id="drive-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Sunday planting at Shivaji Park" maxLength={255} />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Date" htmlFor="drive-date">
-          <Input id="drive-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
-        <Field label="Time" htmlFor="drive-time">
-          <Input id="drive-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-        </Field>
-      </div>
-      <Field label="What will volunteers do?" htmlFor="drive-desc" description="What to bring, where to meet, how long it takes.">
-        <Textarea id="drive-desc" rows={6} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} />
-      </Field>
-      <Field label="Where" description="Search for the area, then move the map so the pin sits on the meeting point.">
-        <div className="flex gap-2">
-          <Input
-            value={place}
-            onChange={(e) => setPlace(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                findPlace();
-              }
-            }}
-            placeholder="Search a place"
-            aria-label="Search a place"
-          />
-          <Button variant="secondary" size="xl" onClick={findPlace} disabled={finding} aria-label="Find place">
-            {finding ? <Spinner /> : <Search aria-hidden="true" />}
-          </Button>
-        </div>
-        <MiniMap center={center} recenterToken={recenter} onCenterChange={setCenter} />
-      </Field>
-      <Field label="Address or landmark (optional)" htmlFor="drive-address">
-        <Input id="drive-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
-      </Field>
-      <Field label="Google Maps link (optional)" htmlFor="drive-maps">
-        <Input id="drive-maps" type="url" inputMode="url" value={mapsUrl} onChange={(e) => setMapsUrl(e.target.value)} placeholder="https://maps.app.goo.gl/…" maxLength={1000} />
-      </Field>
-      {error && <Alert tone="error">{error}</Alert>}
-      <Button size="xl" onClick={submit} disabled={Boolean(blocker) || busy}>
-        {busy && <Spinner />}
-        {blocker ?? 'Schedule drive'}
-      </Button>
-    </div>
-  );
-};
-
 export const AdminPage: React.FC<{
+  /** Your role: admins and super admins both get this page */
+  role: Role;
   you: LatLng | null;
   onClose: () => void;
   onShowDriveOnMap: (d: Drive) => void;
   onShowTreeOnMap: (t: Tree) => void;
-}> = ({ you, onClose, onShowDriveOnMap, onShowTreeOnMap }) => {
+}> = ({ role, you, onClose, onShowDriveOnMap, onShowTreeOnMap }) => {
   const [tab, setTab] = useState<Tab>('overview');
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
+  // What the last schedule or edit told people, shown above the drives
+  const [driveNotice, setDriveNotice] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   // How many trees wait for a photo check, shown on the Review tab
   const [pending, setPending] = useState(0);
@@ -312,11 +186,13 @@ export const AdminPage: React.FC<{
   // The admin page stays underneath while a drive or the schedule form is open,
   // so going back keeps the tab, search, filters and page you were on
   return (
-    <>
+    <ViewerRoleContext.Provider value={role}>
       <Page title="Admin" onBack={onClose} wide>
         <Chips label="Section" options={tabs} value={tab} onChange={setTab} className="no-scrollbar -mx-4 overflow-x-auto px-4" />
         {tab === 'overview' && <Overview />}
         {tab === 'drives' && (
+          <>
+          {driveNotice && <Alert tone="success">{driveNotice}</Alert>}
           <DrivesBrowser
             onOpen={setDrive}
             refreshKey={refreshKey}
@@ -327,10 +203,12 @@ export const AdminPage: React.FC<{
               </Button>
             }
           />
+          </>
         )}
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
         {tab === 'review' && <AdminReview onReviewed={loadPending} />}
         {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
+        {tab === 'settings' && <AdminSettings />}
       </Page>
 
       {drive && (
@@ -340,9 +218,15 @@ export const AdminPage: React.FC<{
             you={you}
             onShowOnMap={onShowDriveOnMap}
             showVisibility
-            onUpdated={(d) => {
+            onUpdated={(d, notifying) => {
               setDrive(d);
               setRefreshKey((k) => k + 1);
+              setDriveNotice(notifyMessage(notifying) ? `Saved. ${notifyMessage(notifying)}` : null);
+            }}
+            onDeleted={(notifying) => {
+              setDrive(null);
+              setRefreshKey((k) => k + 1);
+              setDriveNotice(`Drive deleted.${notifyMessage(notifying) ? ' ' + notifyMessage(notifying) : ''}`);
             }}
           />
         </Page>
@@ -352,13 +236,14 @@ export const AdminPage: React.FC<{
         <Page title="Schedule a drive" onBack={() => setCreating(false)}>
           <DriveForm
             you={you}
-            onDone={() => {
+            onDone={(_drive, notifying) => {
               setCreating(false);
               setRefreshKey((k) => k + 1);
+              setDriveNotice(`Drive scheduled.${notifyMessage(notifying) ? ' ' + notifyMessage(notifying) : ''}`);
             }}
           />
         </Page>
       )}
-    </>
+    </ViewerRoleContext.Provider>
   );
 };

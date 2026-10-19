@@ -63,24 +63,36 @@ cd client
 npm install
 npm run dev
 ```
-> Client running on [http://localhost:5173](http://localhost:5173).
+> Client running on [https://localhost:5173](https://localhost:5173).
+
+**Trusted dev certificate (recommended).** The dev server uses HTTPS (the camera and location need it). With the default self-signed certificate Chrome caches nothing, so every reload downloads all the map tiles again. A locally trusted certificate fixes that:
+
+```bash
+winget install FiloSottile.mkcert     # or: choco install mkcert / brew install mkcert
+mkcert -install                       # trust mkcert's local authority (Windows asks you to confirm)
+cd client && mkdir .cert
+mkcert -cert-file .cert/localhost.pem -key-file .cert/localhost-key.pem localhost 127.0.0.1 ::1
+```
+
+Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-ignored). Without it, the dev server falls back to the self-signed one. Phones opening the dev site by your computer's IP still see a certificate warning unless you also install mkcert's authority on the phone.
 
 ---
 
 ## 🔐 Authentication & Admins
 
 - **Clerk is the only way to sign in.** The API identifies users exclusively from the verified Clerk session token; headers like `x-user-id` are ignored. Without `CLERK_*` keys every protected route returns 401.
-- **Three roles, stored in the database** (`users.role`) and checked by the server on every request:
+- **Four roles, stored in the database** (`users.role`) and checked by the server on every request:
 
   | Role | Can do |
   |---|---|
   | `USER` (default) | Plant trees, log every kind of care, see the map and trees |
   | `TEAM_MEMBER` | Everything a user can, plus **see team-only drives** (drives page, map pins, shared drive links, live walks) |
-  | `ADMIN` | Everything a team member can, plus the Admin area: users, trees, scheduling drives, changing a drive's type or visibility, and changing people's roles. **Admins see every drive.** |
+  | `ADMIN` | Everything a team member can, plus the Admin area: users, trees, reviewing photos, scheduling drives, changing a drive's type or visibility, **Settings**, and moving people between user and team member. **Admins see every drive.** |
+  | `SUPER_ADMIN` | Everything an admin can, plus making someone an admin or super admin and changing or demoting admins |
 
-- **Changing roles:** admins use **Admin → Users** and pick a role for each person (you can't change your own, so there is always an admin). The first admin has to be set once in the database:
+- **Changing roles:** admins use **Admin → Users** and pick a role for each person; only a super admin can make or change an admin. You can't change your own role, so there is always someone at the top. The first super admin has to be set once in the database:
   ```sql
-  UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com';
+  UPDATE users SET role = 'SUPER_ADMIN' WHERE email = 'you@example.com';
   ```
 - **Phone numbers:** anyone can add an optional phone number on their Account page. It is **not verified** (no code is sent) and is only visible to the person and to admins; it never appears in public tree, care or drive data. Admins can open any user's profile from **Admin → Users** (details, phone, role, trees planted, care activity) and search users by name, email or phone.
 - Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require `ADMIN`. Reading drives (`GET /api/v1/drives…`) is open to anyone but filtered by who is asking (see below).
@@ -95,6 +107,16 @@ Every drive has a **type** and a **visibility**, both set by an admin when sched
 | Visibility | `ALL` (everyone, including signed-out visitors) or `TEAM` (team members and admins only). New drives default to `TEAM` so nothing is public by accident. |
 
 Signed-out visitors and normal users see only `ALL` drives; team members see `ALL` and `TEAM`; admins see everything. The server applies this to the list, the calendar, a single drive (a `TEAM` drive answers 401 signed out and 403 for a normal user) and the live-walk socket rooms.
+
+## 🔔 Drive notifications
+
+Admins can **edit and delete drives** (open a drive from Admin → Drives → Edit drive / Delete drive). Scheduling, editing and deleting a drive can tell people about it by **email** and **push notification**. You choose who: *Team members* (team members and admins), *Everyone* (every user; only offered for drives visible to everyone, so a team-only drive can't leak), or *Don't send*. Editing a drive's date, time or place suggests telling team members by default.
+
+- People manage this themselves in **Account → Notifications**: turn drive emails off, and turn push on or off for each device. Opting out is always respected.
+- **Email** goes through [Resend](https://resend.com): set `RESEND_API_KEY` and `EMAIL_FROM` (a sender on a domain you verified in Resend). Without them nothing is emailed and the rest keeps working.
+- **Push** uses Web Push: make keys with `npx web-push generate-vapid-keys` and set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`. Tapping a notification opens the drive. On iPhones push only works once the app is added to the Home Screen.
+- Set `APP_URL` to the public address so links in emails are right (it defaults to the first `CLIENT_ORIGIN`).
+- Sending happens in the background after the admin's save, so a big audience never makes the page wait. Push subscriptions the browser reports as gone are removed automatically.
 
 ## 📸 Photo check and planting rules
 
@@ -111,7 +133,9 @@ A tree is only registered when two things hold, both checked **on the server**:
 
    A missing `OPENAI_API_KEY`, a timeout, an API error or an unexpected answer all count as `pending`, so a tree is never approved by accident. Pending trees are visible only to their owner (My trees → "Awaiting review") and admins, and can't be cared for until approved. Replacing a tree's photo runs the same check. Each person can send 30 photos an hour, since every check costs money.
 
-Set it up with `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-mini`) in `server/.env`, then run `npm run db:push` for the new `verification_status` columns.
+**Whose photos are checked** is a setting in **Admin → Settings** (admins and super admins only; nobody else sees it): *check users* (on by default) and *check team members* (off by default). Admins and super admins are never checked. A photo that isn't checked is accepted as it is and costs nothing. The 15 m rule always applies.
+
+Set it up with `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-mini`) in `server/.env`, then run `npm run db:push` for the new `verification_status` columns and the `app_settings` table.
 
 ## 🌱 Care schedules
 

@@ -8,9 +8,11 @@ export const ConfirmDialog: React.FC<{
   description: string;
   confirmLabel: string;
   busy?: boolean;
+  /** Extra content under the description (e.g. a choice) */
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ open, title, description, confirmLabel, busy, onConfirm, onCancel }) => {
+}> = ({ open, title, description, confirmLabel, busy, children, onConfirm, onCancel }) => {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -35,6 +37,7 @@ export const ConfirmDialog: React.FC<{
       >
         <h2 id="confirm-title" className="text-xl">{title}</h2>
         <p id="confirm-desc" className="mt-2 text-muted-foreground">{description}</p>
+        {children && <div className="mt-4">{children}</div>}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button ref={cancelRef} variant="secondary" size="lg" onClick={onCancel}>
             Cancel

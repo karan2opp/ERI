@@ -5,7 +5,7 @@ import { CalendarDays, ChevronRight, LogOut, Monitor, Moon, Shield, Sun, Trees, 
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
-import { ROLE_LABEL } from '../lib/roles';
+import { ROLE_LABEL, isAdminRole } from '../lib/roles';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Chips } from './ui/chips';
@@ -45,7 +45,7 @@ export const ProfileDrawer: React.FC<{
   onAccount: () => void;
   onAdmin: () => void;
 }> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin }) => {
-  const isAdmin = role === 'ADMIN';
+  const isAdmin = isAdminRole(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);

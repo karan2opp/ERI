@@ -6,12 +6,33 @@ export const users = pgTable('users', {
   id: varchar('id', { length: 255 }).primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   name: varchar('name', { length: 255 }),
-  // USER (default), TEAM_MEMBER or ADMIN
+  // USER (default), TEAM_MEMBER, ADMIN or SUPER_ADMIN
   role: varchar('role', { length: 20 }).default('USER').notNull(),
   avatarUrl: text('avatar_url'),
   // Optional phone number in international form (+919876543210). Not verified; only the person and admins can see it.
   phone: varchar('phone', { length: 20 }),
+  // Email me about drives (people can turn this off in Account > Notifications)
+  emailDrives: boolean('email_drives').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// A browser or phone that turned on push notifications (one person can have several)
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  userAgent: varchar('user_agent', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// App-wide switches admins can change (key, then 'true' or 'false')
+export const appSettings = pgTable('app_settings', {
+  key: varchar('key', { length: 50 }).primaryKey(),
+  value: text('value').notNull(),
+  updatedBy: varchar('updated_by', { length: 255 }),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

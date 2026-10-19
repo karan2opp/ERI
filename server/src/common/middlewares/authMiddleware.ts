@@ -3,7 +3,7 @@ import { clerkClient, getAuth } from '@clerk/express';
 import { db } from '../db';
 import { users, User } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { canSeeTeamDrives } from '../auth/roles';
+import { canSeeTeamDrives, isAdminRole } from '../auth/roles';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -78,7 +78,7 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
 
 /** Must run after requireAuth. The role is read from the database, never from the client. */
 export const requireAdmin = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (req.userRole !== 'ADMIN') {
+  if (!isAdminRole(req.userRole)) {
     return res.status(403).json({ success: false, error: 'Forbidden' });
   }
   next();

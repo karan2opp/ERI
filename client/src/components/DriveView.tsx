@@ -7,7 +7,10 @@ import { Badge } from './ui/badge';
 import { Alert } from './ui/alert';
 import { Chips } from './ui/chips';
 import { DriveTypeBadge, DriveVisibilityBadge } from './DriveBadges';
-import { updateDriveSettings } from '../services/api';
+import { deleteDrive, updateDrive, type NotifyAudience, type Notifying } from '../services/api';
+import { Page } from './ui/top-bar';
+import { ConfirmDialog } from './ui/confirm-dialog';
+import { AudienceField, DriveForm } from './DriveForm';
 import { ExpandableText } from './ui/expandable-text';
 import { Button, buttonClass } from './ui/button';
 import { LiveTracker } from './LiveTracker';
@@ -31,9 +34,16 @@ export const DriveView: React.FC<{
   onShowOnMap: (d: Drive) => void;
   /** Team members and admins also see who can see the drive */
   showVisibility?: boolean;
-  /** Admins can change the drive's type and visibility; called with the saved drive */
-  onUpdated?: (drive: Drive) => void;
-}> = ({ drive, you, onShowOnMap, showVisibility = false, onUpdated }) => {
+  /** Admins can edit the drive; called with the saved drive */
+  onUpdated?: (drive: Drive, notifying?: Notifying) => void;
+  /** Admins can delete the drive; called once it is gone, so the page can close */
+  onDeleted?: (notifying?: Notifying) => void;
+}> = ({ drive, you, onShowOnMap, showVisibility = false, onUpdated, onDeleted }) => {
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  // Cancelling a coming-up drive is worth telling people about; one that already happened isn't
+  const [cancelAudience, setCancelAudience] = useState<NotifyAudience>(isUpcoming(drive) ? 'TEAM' : 'NONE');
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -53,7 +63,8 @@ export const DriveView: React.FC<{
     setSaving(true);
     setSaveError(null);
     try {
-      onUpdated?.(await updateDriveSettings(drive.id, settings));
+      const res = await updateDrive(drive.id, settings);
+      onUpdated?.(res.drive, res.notifying);
     } catch (err) {
       setSaveError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save that. Try again.");
     } finally {
@@ -134,8 +145,50 @@ export const DriveView: React.FC<{
             {saving ? 'Saving…' : drive.visibility === 'ALL' ? 'Everyone, including people who are not signed in, can see this drive.' : 'Only team members and admins can see this drive.'}
           </p>
           {saveError && <Alert tone="error">{saveError}</Alert>}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="secondary" onClick={() => setEditing(true)}>Edit drive</Button>
+            <Button variant="destructive" onClick={() => setDeleting(true)}>Delete drive</Button>
+          </div>
         </section>
       )}
+
+      {editing && (
+        <Page title="Edit drive" onBack={() => setEditing(false)}>
+          <DriveForm
+            you={you}
+            drive={drive}
+            onDone={(saved, notifying) => {
+              setEditing(false);
+              onUpdated?.(saved, notifying);
+            }}
+          />
+        </Page>
+      )}
+
+      <ConfirmDialog
+        open={deleting}
+        title={`Delete ${drive.title}?`}
+        description="The drive is removed for everyone and this can't be undone."
+        confirmLabel="Delete drive"
+        busy={removing}
+        onCancel={() => setDeleting(false)}
+        onConfirm={async () => {
+          setRemoving(true);
+          setSaveError(null);
+          try {
+            const notifying = await deleteDrive(drive.id, cancelAudience);
+            setDeleting(false);
+            onDeleted?.(notifying);
+          } catch (err) {
+            setDeleting(false);
+            setSaveError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't delete the drive. Try again.");
+          } finally {
+            setRemoving(false);
+          }
+        }}
+      >
+        <AudienceField label="Tell people it's cancelled" value={cancelAudience} onChange={setCancelAudience} everyoneAllowed={drive.visibility === 'ALL'} />
+      </ConfirmDialog>
 
       {/* Live walking only makes sense for drives that haven't happened yet */}
       {upcoming && <LiveTracker room={`drive_${drive.id}`} targetName={drive.title} />}

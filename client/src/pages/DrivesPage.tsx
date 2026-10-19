@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Drive, LatLng, Role } from '../types';
-import { canSeeTeamDrives } from '../lib/roles';
+import { canSeeTeamDrives, isAdminRole } from '../lib/roles';
 import { Page } from '../components/ui/top-bar';
 import { DriveView } from '../components/DriveView';
 import { DrivesBrowser } from '../components/DrivesBrowser';
@@ -26,7 +26,8 @@ export const DrivesPage: React.FC<{ role: Role; you: LatLng | null; onClose: () 
             you={you}
             onShowOnMap={onShowOnMap}
             showVisibility={team}
-            onUpdated={role === 'ADMIN' ? (d) => { setOpen(d); setRefreshKey((k) => k + 1); } : undefined}
+            onUpdated={isAdminRole(role) ? (d) => { setOpen(d); setRefreshKey((k) => k + 1); } : undefined}
+            onDeleted={isAdminRole(role) ? () => { setOpen(null); setRefreshKey((k) => k + 1); } : undefined}
           />
         </Page>
       )}

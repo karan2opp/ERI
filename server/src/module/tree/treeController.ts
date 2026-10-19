@@ -10,6 +10,12 @@ import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
 import { verifyTreePhoto } from '../../common/services/treeVerifier';
 import { checkPlantingLocation } from '../../common/utils/treePolicy';
+import { photoNeedsCheck } from '../../common/services/settingsService';
+import { isAdminRole } from '../../common/auth/roles';
+
+/** The AI photo check, unless settings say this person's photos aren't checked (then it counts as a pass). */
+const checkPhoto = async (file: Express.Multer.File, role: string | undefined) =>
+  (await photoNeedsCheck(role)) ? verifyTreePhoto(file) : { verdict: 'TRUE' as const, note: undefined };
 
 /** Trees everyone can see: verified ones. A viewer also sees their own, even while one waits for review. */
 const visibleTrees = (viewerId?: string | null): SQL =>
@@ -136,7 +142,7 @@ export const getTreeById = async (req: Request, res: Response) => {
 
     // A tree waiting for review is seen only by its owner and admins
     const viewer = req as AuthenticatedRequest;
-    const mayView = tree && (tree.verificationStatus === 'VERIFIED' || tree.userId === viewer.userId || viewer.userRole === 'ADMIN');
+    const mayView = tree && (tree.verificationStatus === 'VERIFIED' || tree.userId === viewer.userId || isAdminRole(viewer.userRole));
     if (!tree || !mayView) {
       return res.status(404).json({
         success: false,
@@ -184,7 +190,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ success: false, code: 'PHOTO_REQUIRED', error: 'Take a photo of the tree to register it' });
     }
-    const check = await verifyTreePhoto(req.file);
+    const check = await checkPhoto(req.file, req.userRole);
     if (check.verdict === 'FALSE') {
       // Nothing is saved or uploaded
       return res.status(422).json({
@@ -292,7 +298,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
     let verificationStatus = existingTree.verificationStatus;
     let verificationNote = existingTree.verificationNote;
     if (req.file) {
-      const check = await verifyTreePhoto(req.file);
+      const check = await checkPhoto(req.file, req.userRole);
       if (check.verdict === 'FALSE') {
         return res.status(422).json({
           success: false,

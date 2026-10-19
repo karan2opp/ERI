@@ -6,23 +6,46 @@ import { and, asc, desc, eq, gte, ilike, like, lt, sql, type SQL } from 'drizzle
 import { isUuid } from '../../common/utils/validation';
 import { DRIVE_TYPES, DRIVE_VISIBILITIES, canSeeTeamDrives } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
+import { NOTIFY_AUDIENCES, deliverDriveNotification, resolveRecipients, type NotifyAudience, type Recipients } from '../../common/services/driveNotifier';
 
 const httpUrl = z.string().max(1000).url().refine(u => /^https?:\/\//i.test(u), 'Must be an http(s) URL');
 
-const createDriveSchema = z.object({
+const driveFields = {
   title: z.string().trim().min(1).max(255),
   description: z.string().trim().min(1).max(5000),
   date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
   time: z.string().trim().regex(/^\d{1,2}:\d{2}$/, 'Use HH:MM'),
   // JSON body, so real numbers only (no coercion of "" or null to 0)
-  latitude: z.number().min(-90).max(90).optional(),
-  longitude: z.number().min(-180).max(180).optional(),
-  address: z.string().trim().max(500).optional(),
-  googleMapsUrl: httpUrl.optional().or(z.literal('').transform(() => undefined)),
-  type: z.enum(DRIVE_TYPES).default('PLANTATION'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  address: z.string().trim().max(500),
+  googleMapsUrl: httpUrl.or(z.literal('')),
+  type: z.enum(DRIVE_TYPES),
+  visibility: z.enum(DRIVE_VISIBILITIES),
+};
+
+const createDriveSchema = z.object({
+  title: driveFields.title,
+  description: driveFields.description,
+  date: driveFields.date,
+  time: driveFields.time,
+  latitude: driveFields.latitude.optional(),
+  longitude: driveFields.longitude.optional(),
+  address: driveFields.address.optional(),
+  googleMapsUrl: driveFields.googleMapsUrl.optional().transform((v) => v || undefined),
+  type: driveFields.type.default('PLANTATION'),
   // Team only unless the admin says otherwise, so a drive is never public by accident
-  visibility: z.enum(DRIVE_VISIBILITIES).default('TEAM'),
+  visibility: driveFields.visibility.default('TEAM'),
+  // Who is told about it by email and push notification
+  notify: z.enum(NOTIFY_AUDIENCES).default('TEAM'),
 });
+
+// Everyone can only be told about a drive that everyone can see
+const audienceProblem = (visibility: string, notify: string) =>
+  notify === 'EVERYONE' && visibility === 'TEAM' ? 'A team-only drive can only be announced to team members. Make it visible to everyone first.' : null;
+
+/** What the admin sees after saving: how many people are being told. */
+const notifying = (notify: NotifyAudience, r: Recipients) => ({ audience: notify, emails: r.emails.length, devices: r.subscriptions.length });
 
 export const createDrive = async (req: Request, res: Response) => {
   const parsed = createDriveSchema.safeParse(req.body);
@@ -32,34 +55,93 @@ export const createDrive = async (req: Request, res: Response) => {
       error: parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')
     });
   }
+  const { notify, ...fields } = parsed.data;
+  const problem = audienceProblem(fields.visibility, notify);
+  if (problem) return res.status(400).json({ success: false, error: problem });
 
   try {
-    const newDrive = await db.insert(drives).values(parsed.data).returning();
-    res.status(201).json({ success: true, data: newDrive[0] });
+    const [newDrive] = await db.insert(drives).values(fields).returning();
+    const recipients = await resolveRecipients(notify, (req as AuthenticatedRequest).userId);
+    res.status(201).json({ success: true, data: newDrive, notifying: notifying(notify, recipients) });
+    // After answering: a big audience takes a while
+    void deliverDriveNotification('CREATED', newDrive, recipients);
   } catch (err) {
     console.error('Error creating drive:', err);
-    res.status(500).json({ success: false, error: 'Failed to create drive' });
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to create drive' });
   }
 };
 
-/** PATCH /drives/:id  { type?, visibility? }: an admin changes what kind of drive it is or who can see it. */
-export const updateDriveSettings = async (req: Request, res: Response) => {
-  const parsed = z
-    .object({ type: z.enum(DRIVE_TYPES).optional(), visibility: z.enum(DRIVE_VISIBILITIES).optional() })
-    .refine((v) => v.type || v.visibility, 'Send a type or a visibility')
-    .safeParse(req.body);
+const updateDriveSchema = z
+  .object({
+    title: driveFields.title,
+    description: driveFields.description,
+    date: driveFields.date,
+    time: driveFields.time,
+    latitude: driveFields.latitude,
+    longitude: driveFields.longitude,
+    address: driveFields.address,
+    googleMapsUrl: driveFields.googleMapsUrl,
+    type: driveFields.type,
+    visibility: driveFields.visibility,
+  })
+  .partial()
+  .extend({ notify: z.enum(NOTIFY_AUDIENCES).default('NONE') })
+  .refine((v) => Object.keys(v).some((k) => k !== 'notify'), 'Send at least one thing to change');
+
+/**
+ * PATCH /drives/:id: an admin changes anything about a drive (title, description, date, time, place,
+ * type, visibility). `notify` (NONE, TEAM or EVERYONE) tells people about the change.
+ */
+export const updateDrive = async (req: Request, res: Response) => {
+  const parsed = updateDriveSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ success: false, error: 'type must be PLANTATION or CLEANUP, visibility must be ALL or TEAM' });
+    return res.status(400).json({ success: false, error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
   }
   const { id } = req.params;
   if (!isUuid(id)) return res.status(404).json({ success: false, error: 'Drive not found' });
+  const { notify, ...changes } = parsed.data;
+
   try {
-    const [updated] = await db.update(drives).set(parsed.data).where(eq(drives.id, id)).returning();
-    if (!updated) return res.status(404).json({ success: false, error: 'Drive not found' });
-    res.status(200).json({ success: true, data: updated });
+    const [before] = await db.select().from(drives).where(eq(drives.id, id));
+    if (!before) return res.status(404).json({ success: false, error: 'Drive not found' });
+
+    const visibility = changes.visibility ?? before.visibility;
+    const problem = audienceProblem(visibility, notify);
+    if (problem) return res.status(400).json({ success: false, error: problem });
+
+    const values = { ...changes, googleMapsUrl: changes.googleMapsUrl === '' ? null : changes.googleMapsUrl };
+    const [updated] = await db.update(drives).set(values).where(eq(drives.id, id)).returning();
+
+    const recipients = await resolveRecipients(notify, (req as AuthenticatedRequest).userId);
+    res.status(200).json({ success: true, data: updated, notifying: notifying(notify, recipients) });
+    void deliverDriveNotification('UPDATED', updated, recipients);
   } catch (err) {
     console.error('Error updating drive:', err);
-    res.status(500).json({ success: false, error: 'Failed to update the drive' });
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to update the drive' });
+  }
+};
+
+/** DELETE /drives/:id?notify=NONE|TEAM|EVERYONE: an admin removes a drive and can tell people it is cancelled. */
+export const deleteDrive = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(404).json({ success: false, error: 'Drive not found' });
+  const asked = z.enum(NOTIFY_AUDIENCES).default('NONE').safeParse(req.query.notify ?? undefined);
+  if (!asked.success) return res.status(400).json({ success: false, error: 'notify must be NONE, TEAM or EVERYONE' });
+  const notify = asked.data;
+
+  try {
+    const [drive] = await db.select().from(drives).where(eq(drives.id, id));
+    if (!drive) return res.status(404).json({ success: false, error: 'Drive not found' });
+    const problem = audienceProblem(drive.visibility, notify);
+    if (problem) return res.status(400).json({ success: false, error: problem });
+
+    await db.delete(drives).where(eq(drives.id, id));
+    const recipients = await resolveRecipients(notify, (req as AuthenticatedRequest).userId);
+    res.status(200).json({ success: true, data: { id, removed: true }, notifying: notifying(notify, recipients) });
+    void deliverDriveNotification('CANCELLED', drive, recipients);
+  } catch (err) {
+    console.error('Error deleting drive:', err);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to delete the drive' });
   }
 };
 

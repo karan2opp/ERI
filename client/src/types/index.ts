@@ -1,5 +1,5 @@
-/** USER can use the map; TEAM_MEMBER also sees team-only drives; ADMIN manages everything and sees all drives. */
-export type Role = 'USER' | 'TEAM_MEMBER' | 'ADMIN';
+/** USER can use the map; TEAM_MEMBER also sees team-only drives; ADMIN manages everything and sees all drives; SUPER_ADMIN can also make admins. */
+export type Role = 'USER' | 'TEAM_MEMBER' | 'ADMIN' | 'SUPER_ADMIN';
 
 export interface User {
   id: string;
