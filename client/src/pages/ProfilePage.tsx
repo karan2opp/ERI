@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/react';
-import { Camera, KeyRound, LogOut, Mail } from 'lucide-react';
+import { Camera, LogOut, Mail } from 'lucide-react';
 import type { Role } from '../types';
 import { ROLE_LABEL } from '../lib/roles';
 import { PhoneSection } from '../components/PhoneSection';
 import { NotificationsSection } from '../components/NotificationsSection';
+import { PasswordSection } from '../components/PasswordSection';
 import { syncCurrentUser } from '../services/api';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
@@ -53,11 +54,6 @@ export const ProfilePage: React.FC<{
   const [uploading, setUploading] = useState(false);
   const [photoNotice, setPhotoNotice] = useState<Notice>(null);
 
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordNotice, setPasswordNotice] = useState<Notice>(null);
 
   useEffect(() => {
     setFirstName(user?.firstName ?? '');
@@ -111,37 +107,6 @@ export const ProfilePage: React.FC<{
       setPhotoNotice({ tone: 'error', text: clerkMessage(err, "Couldn't upload that photo. Try a JPG or PNG under 10 MB.") });
     } finally {
       setUploading(false);
-    }
-  };
-
-  const passwordBlocker =
-    user.passwordEnabled && !currentPassword
-      ? 'Enter your current password'
-      : newPassword.length < 8
-        ? 'Use at least 8 characters'
-        : newPassword !== confirmPassword
-          ? "The new passwords don't match"
-          : null;
-
-  const savePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passwordBlocker) return;
-    setSavingPassword(true);
-    setPasswordNotice(null);
-    try {
-      await user.updatePassword({
-        newPassword,
-        ...(user.passwordEnabled ? { currentPassword } : {}),
-        signOutOfOtherSessions: true,
-      });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setPasswordNotice({ tone: 'success', text: 'Password changed. Other devices have been signed out.' });
-    } catch (err) {
-      setPasswordNotice({ tone: 'error', text: clerkMessage(err, "Couldn't change your password. Check your current password and try again.") });
-    } finally {
-      setSavingPassword(false);
     }
   };
 
@@ -217,29 +182,8 @@ export const ProfilePage: React.FC<{
         {signInMethods.length > 0 && <p className="text-sm text-muted-foreground">You also sign in with {signInMethods.join(', ')}.</p>}
       </section>
 
-      {/* Password */}
-      <form onSubmit={savePassword} className="flex flex-col gap-4" aria-labelledby="password-heading">
-        <h2 id="password-heading" className="text-xl">{user.passwordEnabled ? 'Change password' : 'Set a password'}</h2>
-        {!user.passwordEnabled && (
-          <p className="text-muted-foreground">You sign in without a password right now. Set one to also sign in with your email and password.</p>
-        )}
-        {user.passwordEnabled && (
-          <Field label="Current password" htmlFor="current-password">
-            <Input id="current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password" />
-          </Field>
-        )}
-        <Field label="New password" htmlFor="new-password" description="At least 8 characters.">
-          <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" />
-        </Field>
-        <Field label="Repeat new password" htmlFor="confirm-password">
-          <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
-        </Field>
-        {passwordNotice && <Alert tone={passwordNotice.tone}>{passwordNotice.text}</Alert>}
-        <Button type="submit" size="lg" className="self-start" disabled={Boolean(passwordBlocker) || savingPassword}>
-          {savingPassword ? <Spinner className="size-4" /> : <KeyRound aria-hidden="true" />}
-          {newPassword || currentPassword ? passwordBlocker ?? 'Save password' : user.passwordEnabled ? 'Change password' : 'Set password'}
-        </Button>
-      </form>
+      {/* Only people who have a password see this: someone who signs in with Google alone has none to change */}
+      {user.passwordEnabled && <PasswordSection />}
 
       <Button variant="destructive" size="xl" onClick={() => signOut()}>
         <LogOut aria-hidden="true" /> Sign out

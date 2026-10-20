@@ -28,6 +28,16 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// A password reset code that was emailed (one per person; stored as a hash, never the code itself)
+export const passwordResetCodes = pgTable('password_reset_codes', {
+  userId: varchar('user_id', { length: 255 }).primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  // Wrong guesses so far: the code stops working after a few
+  attempts: integer('attempts').default(0).notNull(),
+  lastSentAt: timestamp('last_sent_at').defaultNow().notNull(),
+});
+
 // App-wide switches admins can change (key, then 'true' or 'false')
 export const appSettings = pgTable('app_settings', {
   key: varchar('key', { length: 50 }).primaryKey(),
@@ -36,11 +46,24 @@ export const appSettings = pgTable('app_settings', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// Kinds of tree that people choose from when planting. Admins manage them.
+export const treeCategories = pgTable('tree_categories', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  description: varchar('description', { length: 500 }),
+  createdBy: varchar('created_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // Registered Trees Table
 export const trees = pgTable('trees', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
+  // The kind of tree, by name (kept in step with its category's name)
   species: varchar('species', { length: 255 }).notNull(),
+  // The category it was planted under; empty for trees that were planted before categories existed
+  categoryId: uuid('category_id').references(() => treeCategories.id, { onDelete: 'set null' }),
   description: text('description'),
   photoUrl: text('photo_url').notNull(),
   photoPublicId: varchar('photo_public_id', { length: 255 }),
@@ -73,6 +96,8 @@ export const trees = pgTable('trees', {
   index('trees_verified_location_idx').on(t.latitude, t.longitude).where(sql`verification_status = 'VERIFIED'`),
   // "Mine" filters and per-person counts
   index('trees_user_id_idx').on(t.userId),
+  // "Trees in this category"
+  index('trees_category_id_idx').on(t.categoryId),
 ]);
 
 // Care History & Maintenance Logs Table

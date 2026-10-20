@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAuth, useUser } from '@clerk/react';
+import { useAuth, useClerk, useUser } from '@clerk/react';
 import { Calendar, CheckCircle2, LocateFixed, Plus } from 'lucide-react';
 import type { Drive, LatLng, Role, Tree } from './types';
 import { browseTrees, fetchGlobalDrives, fetchTreeById, fetchTreePins, setAuthTokenGetter, syncCurrentUser, type PinsResult, type TreePin } from './services/api';
@@ -23,7 +23,6 @@ import { NearbyPanel, type DistanceFilter } from './components/map/NearbyPanel';
 import { TreeDetails } from './components/map/TreeDetails';
 import { DriveDetails } from './components/map/DriveDetails';
 import { NavigationCard, NavigationPanel } from './components/map/NavigationPanel';
-import { PickLocation } from './components/map/PickLocation';
 import { ProfileDrawer } from './components/ProfileDrawer';
 import { LiveTracker } from './components/LiveTracker';
 import { Button } from './components/ui/button';
@@ -40,7 +39,7 @@ import { DrivesPage } from './pages/DrivesPage';
 import { SharedDrivePage } from './pages/SharedDrivePage';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
-type Screen = 'map' | 'plant' | 'pick' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
+type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
 type Selection = { kind: 'tree' | 'drive'; id: string } | null;
 type Destination = { name: string; at: LatLng };
 
@@ -90,6 +89,7 @@ function useScreens() {
 
 function MapApp() {
   const { getToken, isSignedIn } = useAuth();
+  const { openSignIn } = useClerk();
   const { user: clerkUser } = useUser();
   const { screen, open, replace, back } = useScreens();
 
@@ -125,8 +125,6 @@ function MapApp() {
   const [destination, setDestination] = useState<Destination | null>(null);
   const [walkLive, setWalkLive] = useState<{ room: string; name: string } | null>(null);
 
-  const [plantAt, setPlantAt] = useState<LatLng | null>(null);
-  const pickCenter = useRef<LatLng | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
   const userId = clerkUser?.id ?? null;
@@ -441,15 +439,26 @@ function MapApp() {
   };
 
   // ---- Planting ----
+  // Planting needs an account. Signed out, the sign-in pop-up opens (it has a sign-up link too), and
+  // once they are signed in they land on the plant screen. Only if that happens soon after asking, so
+  // signing in later for another reason doesn't jump into planting.
+  const plantAfterSignIn = useRef<number | null>(null);
   const startPlanting = () => {
-    setPlantAt(you);
+    if (!isSignedIn) {
+      plantAfterSignIn.current = Date.now();
+      openSignIn({});
+      return;
+    }
     open('plant');
   };
-
-  const confirmPick = () => {
-    if (pickCenter.current) setPlantAt(pickCenter.current);
-    back(); // returns to the plant form
-  };
+  useEffect(() => {
+    if (!isSignedIn || plantAfterSignIn.current === null) return;
+    const askedAt = plantAfterSignIn.current;
+    plantAfterSignIn.current = null;
+    if (Date.now() - askedAt < 10 * 60 * 1000) startPlanting();
+    // Only when sign-in changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn]);
 
   const showBanner = (text: string) => {
     setBanner(text);
@@ -458,7 +467,6 @@ function MapApp() {
 
   // ---- What the sheet shows ----
   const liveRoom = walkLive?.room ?? (selectedTree && !isDemoTree(selectedTree) ? `plant_${selectedTree.id}` : selectedDrive ? `drive_${selectedDrive.id}` : null);
-  const picking = screen === 'pick';
   const navigating = Boolean(destination);
 
   let sheetLabel = 'Trees near you';
@@ -616,8 +624,6 @@ function MapApp() {
         radiusMeters={distance === 'ALL' ? null : Number(distance)}
         route={destination ? route?.line ?? null : null}
         flyTo={flyTo}
-        pickMode={picking}
-        onCenterChange={(c) => (pickCenter.current = c)}
         onMapClick={onMapClick}
         liveRoom={liveRoom}
         initialCenter={start ?? INDIA}
@@ -627,9 +633,7 @@ function MapApp() {
         located={located}
       />
 
-      {picking ? (
-        <PickLocation onConfirm={confirmPick} onCancel={back} onLocate={locate} />
-      ) : (
+      {(
         <>
           {navigating && destination ? (
             <NavigationCard name={destination.name} remaining={remaining} locating={!you} />
@@ -704,16 +708,9 @@ function MapApp() {
         </>
       )}
 
-      {(screen === 'plant' || screen === 'pick') && (
+      {screen === 'plant' && isSignedIn && (
         <PlantTreePage
-          hidden={picking}
-          location={plantAt}
           you={you}
-          youAccuracy={youAccuracy}
-          onChangeLocation={() => {
-            if (plantAt) setFlyTo({ ...plantAt, zoom: 18, timestamp: Date.now() });
-            open('pick');
-          }}
           onClose={back}
           onPlanted={(tree) => {
             back();
@@ -752,10 +749,7 @@ function MapApp() {
             back();
             selectTree(t);
           }}
-          onPlant={() => {
-            setPlantAt(you);
-            replace('plant');
-          }}
+          onPlant={() => replace('plant')}
           onChanged={loadTrees}
         />
       )}

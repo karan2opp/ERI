@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
-import { MapPin } from 'lucide-react';
-import type { LatLng, Tree } from '../types';
-import { createTree } from '../services/api';
-import { MAX_GPS_ACCURACY_M, MAX_PLANTING_DISTANCE_M, SPECIES_PRESETS, shortSpecies } from '../lib/trees';
-import { formatDistance, getDistanceInMeters, reverseGeocode } from '../utils/geo';
+import { useEffect, useRef, useState } from 'react';
+import { Check, MapPin } from 'lucide-react';
+import type { LatLng, Tree, TreeCategory } from '../types';
+import { checkTreePhoto, createTree, type PhotoVerdict } from '../services/api';
+import { MAX_GPS_ACCURACY_M, MAX_PLANTING_DISTANCE_M } from '../lib/trees';
+import { getDistanceInMeters, reverseGeocode } from '../utils/geo';
+import { FixError, captureLocation, type LocationFix } from '../lib/locationFix';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
-import { Chips } from '../components/ui/chips';
+import { CategorySelect } from '../components/CategorySelect';
 import { Field, Input, Textarea } from '../components/ui/field';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
@@ -14,22 +15,81 @@ import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
 import { CareScheduleFields, DEFAULT_SCHEDULE, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
-const OTHER = 'OTHER';
-
-/** Add a tree: where it is, a photo, what it is and a name. */
+/**
+ * Add a tree. There's no map to set a location on: you stand next to the tree and tap "Confirm
+ * location", and the tree is registered at the spot your phone reports at that moment (averaged over
+ * a few seconds so it's as accurate as the phone can manage).
+ */
 export const PlantTreePage: React.FC<{
-  hidden: boolean;
-  location: LatLng | null;
+  /** Where the phone says you are right now (used to notice if you walk away after confirming) */
   you: LatLng | null;
-  /** How sure the phone is of where you are (metres) */
-  youAccuracy: number | null;
-  onChangeLocation: () => void;
   onClose: () => void;
   onPlanted: (tree: Tree) => void;
-}> = ({ hidden, location, you, youAccuracy, onChangeLocation, onClose, onPlanted }) => {
+}> = ({ you, onClose, onPlanted }) => {
+  // The location confirmed at the tree
+  const [fix, setFix] = useState<LocationFix | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [bestSoFar, setBestSoFar] = useState<number | null>(null);
+  const [locError, setLocError] = useState<string | null>(null);
+  const capture = useRef<{ cancel: () => void } | null>(null);
+  useEffect(() => () => capture.current?.cancel(), []);
+
+  const confirmLocation = () => {
+    setLocating(true);
+    setLocError(null);
+    setBestSoFar(null);
+    const c = captureLocation((best) => setBestSoFar(best));
+    capture.current = c;
+    c.result.then(
+      (result) => {
+        setLocating(false);
+        if (result.accuracy > MAX_GPS_ACCURACY_M) {
+          setFix(null);
+          setLocError(`Your phone is only sure of your location to about ${Math.round(result.accuracy)} m. Step into the open, away from buildings and tree cover, and try again.`);
+        } else setFix(result);
+      },
+      (err) => {
+        setLocating(false);
+        setFix(null);
+        const reason = err instanceof FixError ? err.reason : 'unavailable';
+        setLocError(
+          reason === 'denied'
+            ? 'Location is blocked for this site. Allow it in your browser settings, then try again.'
+            : reason === 'unsupported'
+              ? "This browser can't share your location."
+              : "Couldn't get your location. Check that location is on, step into the open and try again. On a computer this usually doesn't work: plant from your phone, next to the tree."
+        );
+      }
+    );
+  };
+
+  // Walked away after confirming: the tree isn't here any more, so ask again
+  const movedAway = Boolean(fix && you && getDistanceInMeters(you.lat, you.lng, fix.lat, fix.lng) > MAX_PLANTING_DISTANCE_M);
+  useEffect(() => {
+    if (movedAway) {
+      setFix(null);
+      setLocError(`You've moved more than ${MAX_PLANTING_DISTANCE_M} m from the spot you confirmed. Go back to the tree and confirm your location again.`);
+    }
+  }, [movedAway]);
+
   const [photo, setPhoto] = useState<File | null>(null);
-  const [species, setSpecies] = useState<string | null>(null);
-  const [customSpecies, setCustomSpecies] = useState('');
+  // Checked the moment the photo is taken: null while checking, 'ERROR' if the check couldn't be done
+  // (planting still checks on the server, so that doesn't block anything)
+  const [verdict, setVerdict] = useState<PhotoVerdict | 'ERROR' | null>(null);
+  useEffect(() => {
+    setVerdict(null);
+    if (!photo) return;
+    let cancelled = false;
+    checkTreePhoto(photo).then(
+      (v) => !cancelled && setVerdict(v),
+      () => !cancelled && setVerdict('ERROR')
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [photo]);
+  const checking = Boolean(photo) && verdict === null;
+  const [category, setCategory] = useState<TreeCategory | null>(null);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
@@ -43,62 +103,58 @@ export const PlantTreePage: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fill in the address for wherever the pin is
+  // Fill in the address for the confirmed spot
   useEffect(() => {
-    if (!location) return;
+    if (!fix) return;
     let cancelled = false;
-    reverseGeocode(location.lat, location.lng).then((a) => {
+    reverseGeocode(fix.lat, fix.lng).then((a) => {
       if (!cancelled) setAddress(a);
     });
     return () => {
       cancelled = true;
     };
-  }, [location?.lat, location?.lng]);
+  }, [fix?.lat, fix?.lng]);
 
-  const fromYou = location && you ? getDistanceInMeters(you.lat, you.lng, location.lat, location.lng) : null;
-  const tooFar = fromYou !== null && fromYou > MAX_PLANTING_DISTANCE_M;
-  const gpsWeak = youAccuracy !== null && youAccuracy > MAX_GPS_ACCURACY_M;
-
-  const finalSpecies = species === OTHER ? customSpecies.trim() : species;
   // What's still missing, shown on the button
-  const blocker = !location
-    ? 'Set the location to continue'
-    : !you || youAccuracy === null
-      ? 'Waiting for your location'
-      : gpsWeak
-        ? 'Your location is not precise enough'
-        : tooFar
-          ? `Be within ${MAX_PLANTING_DISTANCE_M} m of the tree`
-          : !photo
-            ? 'Take a photo of the tree'
+  const blocker = locating
+    ? 'Getting your location…'
+    : !fix
+      ? 'Confirm your location to continue'
+      : !photo
+        ? 'Take a photo of the tree'
+        : checking
+          ? 'Checking your photo…'
+          : verdict === 'FALSE'
+            ? 'Retake the photo'
             : !plantedAt
-      ? 'Choose when it was planted'
-      : plantedInFuture
-        ? "Planting time can't be in the future"
-        : !scheduleValid(schedule)
-          ? 'Care intervals must be 1 to 365 days'
-          : !finalSpecies
-          ? 'Choose what kind of tree it is'
-          : !name.trim()
-            ? 'Give it a name to continue'
-            : null;
+              ? 'Choose when it was planted'
+              : plantedInFuture
+                ? "Planting time can't be in the future"
+                : !scheduleValid(schedule)
+                  ? 'Care intervals must be 1 to 365 days'
+                  : !category
+                    ? 'Choose what kind of tree it is'
+                    : !name.trim()
+                      ? 'Give it a name to continue'
+                      : null;
 
   const submit = async () => {
-    if (blocker || !location || !you || youAccuracy === null || !photo || !finalSpecies) return;
+    if (blocker || !fix || !photo || !category) return;
     setBusy(true);
     setError(null);
     try {
       const form = new FormData();
       form.append('name', name.trim());
-      form.append('species', finalSpecies);
+      form.append('categoryId', category.id);
       form.append('description', description.trim());
       form.append('address', address.trim());
-      form.append('latitude', String(location.lat));
-      form.append('longitude', String(location.lng));
-      // Where you are standing right now: the server checks the tree is within 15 m of it
-      form.append('deviceLatitude', String(you.lat));
-      form.append('deviceLongitude', String(you.lng));
-      form.append('deviceAccuracy', String(youAccuracy));
+      // The tree is registered exactly where the location was confirmed. The same reading goes as the
+      // device position, which the server checks (distance and accuracy) before it saves anything.
+      form.append('latitude', String(fix.lat));
+      form.append('longitude', String(fix.lng));
+      form.append('deviceLatitude', String(fix.lat));
+      form.append('deviceLongitude', String(fix.lng));
+      form.append('deviceAccuracy', String(fix.accuracy));
       if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
       form.append('waterEveryDays', String(parseDays(schedule.water)));
       form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
@@ -113,8 +169,6 @@ export const PlantTreePage: React.FC<{
     }
   };
 
-  if (hidden) return null;
-
   return (
     <Page
       title="Plant a tree"
@@ -126,49 +180,46 @@ export const PlantTreePage: React.FC<{
         </Button>
       }
     >
-      <div className="flex items-center gap-3 rounded-2xl bg-muted p-4">
-        <MapPin className="size-5 shrink-0" aria-hidden="true" />
-        <p className="min-w-0 flex-1">
-          {location ? (
-            <>
-              <span className="font-medium">Location set</span>
-              {fromYou !== null && <span className={tooFar ? 'text-destructive' : 'text-muted-foreground'}>, {formatDistance(fromYou)} from you</span>}
-            </>
-          ) : (
-            <span className="text-muted-foreground">Finding your location…</span>
-          )}
-        </p>
-        <Button variant="secondary" onClick={onChangeLocation}>
-          {location ? 'Change' : 'Set on map'}
+      {/* Where the tree is: you stand next to it and confirm, and that spot is where it's registered */}
+      <section className="flex flex-col gap-3 rounded-2xl bg-muted p-4" aria-labelledby="plant-location">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true">
+            {fix ? <Check className="size-5 text-leaf" /> : <MapPin className="size-5" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="plant-location" className="font-sans text-base font-medium">
+              {fix ? 'Location confirmed' : 'Stand next to the tree'}
+            </h2>
+            <p className="mt-0.5 text-sm text-muted-foreground" role="status" aria-live="polite">
+              {locating
+                ? `Getting your exact location… keep still${bestSoFar !== null ? ` (about ${Math.round(bestSoFar)} m so far)` : ''}.`
+                : fix
+                  ? `The tree will be planted exactly here (accurate to about ${Math.max(1, Math.round(fix.accuracy))} m). Don't walk away until you've planted it.`
+                  : 'Stand right next to the tree, then tap Confirm location. The tree is registered exactly where you are standing.'}
+            </p>
+          </div>
+        </div>
+        <Button variant={fix ? 'secondary' : 'default'} size="lg" onClick={confirmLocation} disabled={locating}>
+          {locating && <Spinner className="size-4" />}
+          {locating ? 'Getting your location…' : fix ? 'Confirm again' : locError ? 'Try again' : 'Confirm location'}
         </Button>
-      </div>
-
-      {tooFar && (
-        <Alert tone="error">
-          You can only register a tree within {MAX_PLANTING_DISTANCE_M} m of where you are standing. Walk to the tree, or move the pin onto where you are.
-        </Alert>
-      )}
-      {gpsWeak && (
-        <Alert tone="thirsty">
-          Your phone's location is only accurate to about {Math.round(youAccuracy!)} m. Step into the open and wait a few seconds.
-        </Alert>
-      )}
+        {locError && <Alert tone="error">{locError}</Alert>}
+      </section>
 
       <Field label="Photo of the tree" description="It has to show the tree or plant. Photos of anything else are rejected, and unclear ones are checked by an admin first.">
         <PhotoField file={photo} onChange={setPhoto} />
+        {checking && (
+          <p role="status" className="flex items-center gap-2 text-muted-foreground">
+            <Spinner className="size-4" /> Checking your photo…
+          </p>
+        )}
+        {verdict === 'TRUE' && <Alert tone="success">Looks like a tree or plant. Thanks!</Alert>}
+        {verdict === 'FALSE' && <Alert tone="error">That doesn't look like a tree or plant. Retake the photo with the tree in the middle of the picture.</Alert>}
+        {verdict === 'PENDING' && <Alert tone="info">We couldn't tell for sure. You can still plant it, and an admin will check the photo before the tree shows on the map.</Alert>}
       </Field>
 
-      <Field label="What kind of tree?" description={species === OTHER ? undefined : 'Not sure? Pick Other and describe it.'}>
-        <Chips
-          label="Species"
-          value={species}
-          onChange={setSpecies}
-          options={[...SPECIES_PRESETS.map((s) => ({ value: s, label: shortSpecies(s) })), { value: OTHER, label: 'Other' }]}
-          className="flex-wrap"
-        />
-        {species === OTHER && (
-          <Input value={customSpecies} onChange={(e) => setCustomSpecies(e.target.value)} placeholder="e.g. Silver oak" aria-label="Kind of tree" maxLength={255} autoFocus />
-        )}
+      <Field label="What kind of tree?" htmlFor="plant-category" description="Pick from the list. Can't find it? An admin can add it.">
+        <CategorySelect id="plant-category" value={category} onChange={setCategory} />
       </Field>
 
       <PlantedAtField

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { Tree } from '../types';
+import type { Tree, TreeCategory } from '../types';
 import { updateTree } from '../services/api';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Field, Input, Textarea } from '../components/ui/field';
+import { CategorySelect } from '../components/CategorySelect';
 import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
@@ -13,7 +14,8 @@ import { CareScheduleFields, parseDays, scheduleValid } from '../components/Care
 export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: (tree: Tree) => void }> = ({ tree, onClose, onSaved }) => {
   const [photo, setPhoto] = useState<File | null>(null);
   const [name, setName] = useState(tree.name);
-  const [species, setSpecies] = useState(tree.species);
+  // Starts on the tree's current category (trees from before categories existed start empty and keep their kind until one is chosen)
+  const [category, setCategory] = useState<TreeCategory | null>(tree.categoryId ? { id: tree.categoryId, name: tree.species } : null);
   const [address, setAddress] = useState(tree.address || '');
   const [description, setDescription] = useState(tree.description || '');
   const [health, setHealth] = useState(tree.healthScore);
@@ -30,9 +32,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
 
   const blocker = !name.trim()
     ? 'Give it a name to save'
-    : !species.trim()
-      ? 'Say what kind of tree it is'
-      : !plantedAt
+    : !plantedAt
         ? 'Choose when it was planted'
         : plantedAt.getTime() > Date.now() + 5 * 60 * 1000
           ? "Planting time can't be in the future"
@@ -47,7 +47,8 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
     try {
       const form = new FormData();
       form.append('name', name.trim());
-      form.append('species', species.trim());
+      // Only sent when there's a category, so an old tree without one keeps its kind
+      if (category) form.append('categoryId', category.id);
       form.append('address', address.trim());
       form.append('description', description.trim());
       form.append('healthScore', String(health));
@@ -82,8 +83,8 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       <Field label="Name" htmlFor="edit-name">
         <Input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={255} />
       </Field>
-      <Field label="Kind of tree" htmlFor="edit-species">
-        <Input id="edit-species" value={species} onChange={(e) => setSpecies(e.target.value)} maxLength={255} />
+      <Field label="Kind of tree" htmlFor="edit-category" description={category ? undefined : `Now: ${tree.species}. Choose a category to change it.`}>
+        <CategorySelect id="edit-category" value={category} onChange={setCategory} placeholder={tree.species} />
       </Field>
       <Field label="Address or landmark" htmlFor="edit-address">
         <Input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />

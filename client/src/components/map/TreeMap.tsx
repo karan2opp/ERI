@@ -121,20 +121,12 @@ const CameraController: React.FC<{ flyTo: FlyToTarget | null; route: [number, nu
 };
 
 const MapEvents: React.FC<{
-  pickMode: boolean;
-  onCenterChange?: (c: LatLng) => void;
   onMapClick?: () => void;
   onViewChange?: (view: MapView) => void;
-}> = ({ pickMode, onCenterChange, onMapClick, onViewChange }) => {
+}> = ({ onMapClick, onViewChange }) => {
   const map = useMapEvents({
-    move() {
-      if (pickMode && onCenterChange) {
-        const c = map.getCenter();
-        onCenterChange({ lat: c.lat, lng: c.lng });
-      }
-    },
     click() {
-      if (!pickMode) onMapClick?.();
+      onMapClick?.();
     },
   });
 
@@ -154,14 +146,6 @@ const MapEvents: React.FC<{
       map.off('moveend', report);
     };
   }, [map]);
-
-  // Report the starting centre as soon as pick mode begins
-  useEffect(() => {
-    if (pickMode && onCenterChange) {
-      const c = map.getCenter();
-      onCenterChange({ lat: c.lat, lng: c.lng });
-    }
-  }, [pickMode]);
 
   return null;
 };
@@ -244,8 +228,6 @@ export interface TreeMapProps {
   radiusMeters: number | null;
   route: [number, number][] | null;
   flyTo: FlyToTarget | null;
-  pickMode: boolean;
-  onCenterChange?: (center: LatLng) => void;
   onMapClick?: () => void;
   liveRoom: string | null;
   initialCenter: LatLng;
@@ -276,8 +258,6 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   radiusMeters,
   route,
   flyTo,
-  pickMode,
-  onCenterChange,
   onMapClick,
   liveRoom,
   initialCenter,
@@ -332,7 +312,7 @@ export const TreeMap: React.FC<TreeMapProps> = ({
         )}
 
         <CameraController flyTo={flyTo} route={route} />
-        <MapEvents pickMode={pickMode} onCenterChange={onCenterChange} onMapClick={onMapClick} onViewChange={onViewChange} />
+        <MapEvents onMapClick={onMapClick} onViewChange={onViewChange} />
 
         {userLocation && radiusMeters && (
           <Circle
@@ -344,11 +324,10 @@ export const TreeMap: React.FC<TreeMapProps> = ({
 
         {route && <Route line={route} />}
 
-        {!pickMode && treePins.map((pin) => <TreePinMarker key={pin.id} pin={pin} selected={pin.id === selectedTreeId} onSelect={onSelectTree} />)}
-        {!pickMode && clusters.map((c) => <ClusterMarker key={`${c.lat},${c.lng},${c.count}`} cluster={c} />)}
+        {treePins.map((pin) => <TreePinMarker key={pin.id} pin={pin} selected={pin.id === selectedTreeId} onSelect={onSelectTree} />)}
+        {clusters.map((c) => <ClusterMarker key={`${c.lat},${c.lng},${c.count}`} cluster={c} />)}
 
-        {!pickMode &&
-          drives.map(
+        {drives.map(
             (d) =>
               d.latitude != null &&
               d.longitude != null && (

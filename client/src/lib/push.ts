@@ -18,7 +18,7 @@ export async function currentPushSubscription(): Promise<PushSubscription | null
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
-export type EnableResult = 'enabled' | 'denied' | 'unsupported' | 'unavailable';
+export type EnableResult = 'enabled' | 'denied' | 'unsupported' | 'unavailable' | 'untrusted';
 
 /** Asks permission, subscribes this browser, and tells the server. */
 export async function enablePush(): Promise<EnableResult> {
@@ -29,7 +29,14 @@ export async function enablePush(): Promise<EnableResult> {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return 'denied';
 
-  const reg = await registration();
+  let reg: ServiceWorkerRegistration;
+  try {
+    reg = await registration();
+  } catch {
+    // Browsers only run a service worker for a page on a trusted https address (a certificate warning,
+    // like a local test address the phone doesn't trust, blocks it)
+    return 'untrusted';
+  }
   const subscription =
     (await reg.pushManager.getSubscription()) ??
     (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(config.publicKey) }));

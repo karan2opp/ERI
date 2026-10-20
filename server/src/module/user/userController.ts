@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { clerkClient } from '@clerk/express';
+import { checkResetCode, sendResetCode, MAX_WRONG_TRIES } from '../../common/services/passwordReset';
 import { eq } from 'drizzle-orm';
 import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
@@ -67,5 +68,65 @@ export const setMyPhoneController = async (req: AuthenticatedRequest, res: Respo
   } catch (err) {
     console.error('Error saving phone number:', err);
     return res.status(500).json({ success: false, error: 'Failed to save your phone number' });
+  }
+};
+
+/**
+ * POST /users/me/password-reset: emails a 6-digit code to the signed-in person's address, so they can choose
+ * a new password without knowing the current one. (Clerk won't start its own reset for someone who is already
+ * signed in, so this is done here.) Only for people who have a password: Google-only accounts have none.
+ */
+export const requestPasswordResetController = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const clerkUser = await clerkClient.users.getUser(req.userId!);
+    if (!clerkUser.passwordEnabled) {
+      return res.status(400).json({ success: false, error: 'This account signs in without a password, so there is no password to reset.' });
+    }
+    const primary = clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId) ?? clerkUser.emailAddresses[0];
+    const email = primary?.emailAddress ?? req.user!.email;
+    const result = await sendResetCode(req.userId!, email, req.user!.name);
+    if (result.ok) return res.status(200).json({ success: true });
+    if (result.reason === 'too-soon') {
+      return res.status(429).json({ success: false, error: `A code was just sent. You can ask for another in ${result.waitSeconds} seconds.` });
+    }
+    if (result.reason === 'email-off') {
+      return res.status(503).json({ success: false, error: "Email isn't set up on this server yet, so the code can't be sent." });
+    }
+    res.status(502).json({ success: false, error: "We couldn't send the email. Try again in a moment." });
+  } catch (err) {
+    console.error('Error sending a password reset code:', err);
+    res.status(500).json({ success: false, error: "We couldn't send the email. Try again in a moment." });
+  }
+};
+
+/** POST /users/me/password-reset/confirm  { code, newPassword }: checks the emailed code and sets the new password. */
+export const confirmPasswordResetController = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits'), newPassword: z.string().min(8, 'Use at least 8 characters').max(128) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error.issues.map((i) => i.message).join('; ') });
+
+  try {
+    const checked = await checkResetCode(req.userId!, parsed.data.code);
+    if (!checked.ok) {
+      const error =
+        checked.reason === 'wrong'
+          ? `That code isn't right. ${checked.triesLeft} ${checked.triesLeft === 1 ? 'try' : 'tries'} left.`
+          : checked.reason === 'locked'
+            ? `Too many wrong codes (${MAX_WRONG_TRIES}). Ask for a new code.`
+            : checked.reason === 'expired'
+              ? 'That code has expired. Ask for a new one.'
+              : 'There is no code waiting. Ask for one first.';
+      return res.status(400).json({ success: false, error });
+    }
+    try {
+      await clerkClient.users.updateUser(req.userId!, { password: parsed.data.newPassword, signOutOfOtherSessions: true });
+    } catch (err) {
+      // Clerk refuses weak or leaked passwords: say why, and the person can ask for a new code
+      const message = (err as { errors?: { longMessage?: string; message?: string }[] })?.errors?.[0]?.longMessage || (err as Error).message;
+      return res.status(422).json({ success: false, error: `${message || "That password can't be used."} Ask for a new code and try another password.` });
+    }
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Error resetting a password:', err);
+    res.status(500).json({ success: false, error: "Couldn't change the password. Try again." });
   }
 };

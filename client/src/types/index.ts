@@ -23,10 +23,22 @@ export interface CareLog {
   performedAt: string;
 }
 
+/** A kind of tree that people choose from when planting; admins manage them. */
+export interface TreeCategory {
+  id: string;
+  name: string;
+  description?: string | null;
+  /** Verified trees in it (the list endpoint includes this) */
+  treeCount?: number;
+}
+
 export interface Tree {
   id: string;
   name: string;
+  /** The kind of tree, by name (its category's name) */
   species: string;
+  /** Its category; empty for trees planted before categories existed */
+  categoryId?: string | null;
   description?: string;
   photoUrl: string;
   photoPublicId?: string;

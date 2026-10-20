@@ -8,14 +8,32 @@ import { needsWater } from '../../common/utils/careSchedule';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
-import { verifyTreePhoto } from '../../common/services/treeVerifier';
+import { verifyTreePhotoOnce } from '../../common/services/treeVerifier';
 import { checkPlantingLocation } from '../../common/utils/treePolicy';
+import { findCategory } from '../category/categoryController';
 import { photoNeedsCheck } from '../../common/services/settingsService';
 import { isAdminRole } from '../../common/auth/roles';
 
 /** The AI photo check, unless settings say this person's photos aren't checked (then it counts as a pass). */
-const checkPhoto = async (file: Express.Multer.File, role: string | undefined) =>
-  (await photoNeedsCheck(role)) ? verifyTreePhoto(file) : { verdict: 'TRUE' as const, note: undefined };
+const checkPhoto = async (file: Express.Multer.File, role: string | undefined, userId: string) =>
+  (await photoNeedsCheck(role)) ? verifyTreePhotoOnce(file, userId) : { verdict: 'TRUE' as const, note: undefined };
+
+/**
+ * POST /trees/check-photo (a photo): the answer for a photo that has just been taken, so the person knows
+ * before filling in the form. TRUE / FALSE / PENDING, or SKIPPED when this person's photos aren't checked.
+ * Planting still checks again on the server (reusing this answer), so this only informs: it can't be skipped.
+ */
+export const checkTreePhoto = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.file) return res.status(400).json({ success: false, error: 'Send a photo' });
+  try {
+    if (!(await photoNeedsCheck(req.userRole))) return res.status(200).json({ success: true, verdict: 'SKIPPED' });
+    const check = await verifyTreePhotoOnce(req.file, req.userId!);
+    res.status(200).json({ success: true, verdict: check.verdict });
+  } catch (err) {
+    console.error('Error checking a tree photo:', err);
+    res.status(500).json({ success: false, error: 'Could not check the photo' });
+  }
+};
 
 /** Trees everyone can see: verified ones. A viewer also sees their own, even while one waits for review. */
 const visibleTrees = (viewerId?: string | null): SQL =>
@@ -39,7 +57,8 @@ const JUST_PLANTED_MS = 24 * 60 * 60 * 1000;
 
 const createTreeSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  species: z.string().trim().min(1).max(255),
+  // The kind of tree is a category an admin created
+  categoryId: z.string().uuid('Choose a kind of tree'),
   description: z.string().trim().max(5000).optional(),
   address: z.string().trim().max(500).optional(),
   latitude: latitudeSchema,
@@ -57,7 +76,7 @@ const createTreeSchema = z.object({
 
 const updateTreeSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
-  species: z.string().trim().min(1).max(255).optional(),
+  categoryId: z.string().uuid('Choose a kind of tree').optional(),
   description: z.string().trim().max(5000).optional(),
   address: z.string().trim().max(500).optional(),
   healthScore: z.coerce.number().int().min(0).max(100).optional(),
@@ -140,7 +159,11 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const { name, species, description, latitude, longitude, address } = parsed.data;
+    const { name, description, latitude, longitude, address } = parsed.data;
+
+    const category = await findCategory(parsed.data.categoryId);
+    if (!category) return res.status(400).json({ success: false, error: 'That kind of tree is not available any more. Choose another.' });
+    const species = category.name;
 
     // 1. The person has to be standing at the tree (cheap, so it goes before the photo check)
     const tooFar = checkPlantingLocation(
@@ -155,7 +178,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     if (!req.file) {
       return res.status(400).json({ success: false, code: 'PHOTO_REQUIRED', error: 'Take a photo of the tree to register it' });
     }
-    const check = await checkPhoto(req.file, req.userRole);
+    const check = await checkPhoto(req.file, req.userRole, userId);
     if (check.verdict === 'FALSE') {
       // Nothing is saved or uploaded
       return res.status(422).json({
@@ -178,6 +201,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     const [newTree] = await db.insert(trees).values({
       name,
       species,
+      categoryId: category.id,
       description: description || '',
       photoUrl,
       photoPublicId,
@@ -238,7 +262,12 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    const { name, species, description, address, healthScore, plantedAt } = parsed.data;
+    const { name, description, address, healthScore, plantedAt } = parsed.data;
+    let category = null;
+    if (parsed.data.categoryId) {
+      category = await findCategory(parsed.data.categoryId);
+      if (!category) return res.status(400).json({ success: false, error: 'That kind of tree is not available any more. Choose another.' });
+    }
 
     const [existingTree] = await db.select().from(trees).where(eq(trees.id, id));
 
@@ -263,7 +292,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
     let verificationStatus = existingTree.verificationStatus;
     let verificationNote = existingTree.verificationNote;
     if (req.file) {
-      const check = await checkPhoto(req.file, req.userRole);
+      const check = await checkPhoto(req.file, req.userRole, userId);
       if (check.verdict === 'FALSE') {
         return res.status(422).json({
           success: false,
@@ -286,7 +315,8 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
     const [updatedTree] = await db.update(trees)
       .set({
         name: name !== undefined ? name : existingTree.name,
-        species: species !== undefined ? species : existingTree.species,
+        species: category ? category.name : existingTree.species,
+        categoryId: category ? category.id : existingTree.categoryId,
         description: description !== undefined ? description : existingTree.description,
         address: address !== undefined ? address : existingTree.address,
         healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
@@ -376,6 +406,8 @@ const browseQuery = z.object({
   mine: z.enum(['true', 'false']).optional(),
   search: z.string().trim().max(200).optional(),
   sort: z.enum(['nearest', 'newest', 'oldest', 'thirsty']).optional(),
+  // Only trees in this category (also reached as /categories/:categoryId/trees)
+  categoryId: z.string().uuid().optional(),
 });
 
 /** Metres from (lat, lng) to each tree, worked out in the database (haversine). */
@@ -393,11 +425,11 @@ const distanceFrom = (lat: number, lng: number) =>
  * With mine=true it also returns `summary` (how many of your trees there are, and how many need water).
  */
 export const browseTrees = async (req: Request, res: Response) => {
-  const parsed = browseQuery.safeParse(req.query);
+  const parsed = browseQuery.safeParse({ ...req.query, ...(req.params.categoryId ? { categoryId: req.params.categoryId } : {}) });
   if (!parsed.success) {
     return res.status(400).json({ success: false, error: 'Invalid filters' });
   }
-  const { page, limit, lat, lng, radius, status, mine, search } = parsed.data;
+  const { page, limit, lat, lng, radius, status, mine, search, categoryId } = parsed.data;
   const here = lat !== undefined && lng !== undefined;
   const sort = parsed.data.sort ?? (here ? 'nearest' : 'newest');
 
@@ -415,6 +447,7 @@ export const browseTrees = async (req: Request, res: Response) => {
     // Verified trees for everyone; your own list also shows trees waiting for review
     const base: SQL[] = [visibleTrees(userId)];
     if (userId) base.push(eq(trees.userId, userId));
+    if (categoryId) base.push(eq(trees.categoryId, categoryId));
     if (search) base.push(or(ilike(trees.name, likePattern(search)), ilike(trees.species, likePattern(search)), ilike(trees.address, likePattern(search)))!);
     if (distance && radius) base.push(sql`${distance} <= ${radius}`);
 

@@ -53,16 +53,5 @@ export const CARE_LABEL: Record<CareAction, string> = {
   INSPECTED: 'Checked',
 };
 
-export const SPECIES_PRESETS = [
-  'Neem (Azadirachta indica)',
-  'Peepal (Ficus religiosa)',
-  'Banyan (Ficus benghalensis)',
-  'Mango (Mangifera indica)',
-  'Jamun (Syzygium cumini)',
-  'Ashoka (Saraca asoca)',
-  'Gulmohar (Delonix regia)',
-  'Jacaranda (Jacaranda mimosifolia)',
-];
-
 /** "Neem (Azadirachta indica)" -> "Neem" */
 export const shortSpecies = (species: string) => species.split(' (')[0];

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Tree, CareLog, User, Drive, Role, DriveType, DriveVisibility } from '../types';
+import type { Tree, CareLog, User, Drive, Role, DriveType, DriveVisibility, TreeCategory } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -78,6 +78,39 @@ export const fetchTreePins = async (
 export const fetchTreeById = async (id: string): Promise<Tree> => {
   const res = await api.get(`/trees/${id}`);
   return res.data.data;
+};
+
+// ---- Tree categories (anyone can read them; admins change them)
+/** The categories, 10 per page, A to Z. `search` matches the name. */
+export const fetchCategories = async (params: { page?: number; limit?: number; search?: string } = {}): Promise<Paged<TreeCategory>> => {
+  const res = await api.get('/categories', { params: { page: params.page ?? 1, limit: params.limit ?? 10, ...(params.search ? { search: params.search } : {}) } });
+  return res.data;
+};
+
+export const createCategory = async (data: { name: string; description?: string }): Promise<TreeCategory> => {
+  const res = await api.post('/categories', data);
+  return res.data.data;
+};
+
+export const updateCategory = async (id: string, changes: { name?: string; description?: string }): Promise<TreeCategory> => {
+  const res = await api.patch(`/categories/${id}`, changes);
+  return res.data.data;
+};
+
+export const deleteCategory = async (id: string): Promise<{ treesKept: number }> => {
+  const res = await api.delete(`/categories/${id}`);
+  return res.data.data;
+};
+
+/** What the AI photo check says about a photo: a tree or plant, not one, not sure, or not checked for this person. */
+export type PhotoVerdict = 'TRUE' | 'FALSE' | 'PENDING' | 'SKIPPED';
+
+/** Checks a photo right after it is taken (planting checks it again on the server, reusing this answer). */
+export const checkTreePhoto = async (photo: File): Promise<PhotoVerdict> => {
+  const form = new FormData();
+  form.append('photo', photo);
+  const res = await api.post('/trees/check-photo', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 45_000 });
+  return res.data.verdict;
 };
 
 export const createTree = async (formData: FormData): Promise<Tree> => {
@@ -329,6 +362,16 @@ export const fetchNotificationPreferences = async (): Promise<{ emailDrives: boo
 
 export const setEmailDrives = async (emailDrives: boolean) => {
   await api.put('/notifications/preferences', { emailDrives });
+};
+
+/** Emails a 6-digit code to the signed-in person, so they can choose a new password without the old one. */
+export const requestPasswordReset = async () => {
+  await api.post('/users/me/password-reset');
+};
+
+/** Checks the emailed code and sets the new password. */
+export const confirmPasswordReset = async (code: string, newPassword: string) => {
+  await api.post('/users/me/password-reset/confirm', { code, newPassword });
 };
 
 export const subscribePush = async (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) => {

@@ -118,11 +118,29 @@ Admins can **edit and delete drives** (open a drive from Admin → Drives → Ed
 - Set `APP_URL` to the public address so links in emails are right (it defaults to the first `CLIENT_ORIGIN`).
 - Sending happens in the background after the admin's save, so a big audience never makes the page wait. Push subscriptions the browser reports as gone are removed automatically.
 
+## 🔑 Passwords
+
+Account → **Change password** is only shown to people who have a password. Someone who signs in with Google alone has none, so they see no password section. People with a password can change it with their current one, or choose **Forgot your password? → Email me a code**: a 6-digit code is emailed to their address (it works for 10 minutes, is stored only as a hash, is used up once, and stops working after 5 wrong tries; a new code can be requested once a minute and 10 requests an hour are allowed). Clerk won't start its own email reset for someone who is already signed in, so the server sends and checks the code (`POST /users/me/password-reset` and `/confirm`) and sets the new password through Clerk. This needs email set up (`RESEND_API_KEY` and `EMAIL_FROM`); other devices are signed out afterwards. Run `npm run db:push` for the new `password_reset_codes` table.
+
+## 🌳 Tree categories
+
+The "kind of tree" people pick when planting is a **category that admins manage** (Admin → Categories: add, rename, delete; the list pages 10 at a time with search). Planting and editing use a searchable select box that loads 10 at a time from the server. Renaming a category updates the trees in it. Deleting one leaves its trees on the map with the name they had, but no longer listed under a category.
+
+Anyone (signed out too) can read them, all paged on the server (10 per page, up to 50):
+
+| Route | What |
+|---|---|
+| `GET /api/v1/categories?page=&limit=&search=` | The categories, A to Z, each with its verified tree count |
+| `GET /api/v1/categories/:id` | One category |
+| `GET /api/v1/categories/:id/trees?page=&limit=` | Verified trees in it, with the same filters as `/trees/browse` (search, distance, status, sort). `/trees/browse?categoryId=` works too |
+
+Admins change them with `POST /categories`, `PATCH /categories/:id` and `DELETE /categories/:id`. The first time the server starts it adds the 8 starting categories (Neem, Peepal, Banyan, Mango, Jamun, Ashoka, Gulmohar, Jacaranda) and links existing trees to the one with their name. That happens once, so categories an admin deletes don't come back. After pulling this change run `npm run db:push` (new `tree_categories` table and `category_id` column).
+
 ## 📸 Photo check and planting rules
 
 A tree is only registered when two things hold, both checked **on the server**:
 
-1. **You are at the tree.** The app sends where your phone is (`deviceLatitude`, `deviceLongitude`, `deviceAccuracy`) along with the tree's pin. The tree must be within **15 m** of you, and your GPS must be accurate to 20 m or better. Limits live in `server/src/common/utils/treePolicy.ts`.
+1. **You are at the tree.** There is no map to set a location on: you stand next to the tree and tap **Confirm location**, and the tree is registered exactly where you are standing. The app listens to your GPS for a few seconds and averages the readings (trusting the accurate ones more), so the spot is as close as the phone can manage. The location has to be accurate to 20 m or better, and if you walk more than 15 m away after confirming you are asked to confirm again. The app sends that reading with the tree and the server checks it again (`deviceLatitude`, `deviceLongitude`, `deviceAccuracy`; limits in `server/src/common/utils/treePolicy.ts`). Phone GPS is typically good to 3 to 5 m in the open, and worse under trees or near buildings.
 2. **The photo shows a tree or plant.** A photo is required and is checked by an OpenAI vision model (`server/src/common/services/treeVerifier.ts`), which can only answer one of three things:
 
    | Answer | What happens |

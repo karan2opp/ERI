@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import OpenAI from 'openai';
 import { env } from '../config/env';
 
@@ -11,6 +12,8 @@ export type TreeVerdict = 'TRUE' | 'FALSE' | 'PENDING';
 
 export interface TreeCheck {
   verdict: TreeVerdict;
+  /** The check couldn't run (no key, timeout, API error), so this answer isn't worth remembering */
+  failed?: boolean;
   /** Why it is PENDING, for admins (never from the model: the model only ever answers true, false or pending) */
   note?: string;
 }
@@ -44,7 +47,7 @@ const getClient = () => (client ??= new OpenAI({ apiKey: env.OPENAI_API_KEY, tim
 export async function verifyTreePhoto(file: Pick<Express.Multer.File, 'buffer' | 'mimetype'>): Promise<TreeCheck> {
   if (!env.OPENAI_API_KEY) {
     console.warn('OPENAI_API_KEY is not set: tree photos are sent to manual review.');
-    return { verdict: 'PENDING', note: 'Automatic photo check is not set up' };
+    return { verdict: 'PENDING', note: 'Automatic photo check is not set up', failed: true };
   }
 
   try {
@@ -69,9 +72,30 @@ export async function verifyTreePhoto(file: Pick<Express.Multer.File, 'buffer' |
     if (answer === 'true') return { verdict: 'TRUE' };
     if (answer === 'false') return { verdict: 'FALSE' };
     if (answer === 'pending') return { verdict: 'PENDING', note: 'The photo check was not sure' };
-    return { verdict: 'PENDING', note: 'The photo check gave no clear answer' };
+    return { verdict: 'PENDING', note: 'The photo check gave no clear answer', failed: true };
   } catch (err) {
     console.error('Tree photo check failed:', err instanceof Error ? err.message : err);
-    return { verdict: 'PENDING', note: 'The photo check could not run' };
+    return { verdict: 'PENDING', note: 'The photo check could not run', failed: true };
   }
+}
+
+// A photo is checked as soon as it is taken (so people know at once) and again when the tree is
+// planted. The same photo from the same person reuses the first answer, so it is only paid for once.
+const REMEMBER_MS = 15 * 60 * 1000;
+const MAX_REMEMBERED = 500;
+const remembered = new Map<string, { at: number; check: TreeCheck }>();
+
+export async function verifyTreePhotoOnce(file: Pick<Express.Multer.File, 'buffer' | 'mimetype'>, userId: string): Promise<TreeCheck> {
+  const now = Date.now();
+  for (const [key, entry] of remembered) {
+    if (now - entry.at > REMEMBER_MS || remembered.size > MAX_REMEMBERED) remembered.delete(key);
+    else break; // entries are in the order they were added, so the rest are newer
+  }
+  const key = `${userId}:${createHash('sha256').update(file.buffer).digest('hex')}`;
+  const hit = remembered.get(key);
+  if (hit) return hit.check;
+
+  const check = await verifyTreePhoto(file);
+  if (!check.failed) remembered.set(key, { at: now, check });
+  return check;
 }

@@ -132,7 +132,7 @@ export const ProfileDrawer: React.FC<{
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Profile">
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
-                  <NavRow icon={<UserRound />} label="Account" hint="Name, photo and password" onClick={go(onAccount)} />
+                  <NavRow icon={<UserRound />} label="Account" hint="Your details and notifications" onClick={go(onAccount)} />
                   {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
                 </nav>
               </>

@@ -7,6 +7,7 @@ import {
   deleteTree,
   browseTrees
 } from './treeController';
+import { checkTreePhoto } from './treeController';
 import { getTreePins } from './pinsController';
 import {
   addCareLog,
@@ -21,7 +22,8 @@ const router = Router();
 // Every new tree photo is checked by an AI model, which costs money: cap how many one person can send
 const photoChecksLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 30,
+  // A tree's photo is checked once when it is taken and the answer is reused at planting, but retakes count
+  limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
   // Runs after requireAuth, so it is per person, not per network
@@ -42,6 +44,8 @@ router.get('/:id', optionalAuth, getTreeById);
 router.get('/:treeId/care', getTreeCareHistory);
 
 // Authenticated Routes
+// Checks a photo the moment it is taken
+router.post('/check-photo', requireAuth, photoChecksLimiter, uploadSingleImage, checkTreePhoto);
 router.post('/', requireAuth, photoChecksLimiter, uploadSingleImage, createTree);
 router.put('/:id', requireAuth, photoChecksLimiter, uploadSingleImage, updateTree);
 router.delete('/:id', requireAuth, deleteTree);

@@ -12,13 +12,13 @@ export const ARRIVED_WITHIN_M = 20;
 export const NavigationCard: React.FC<{ name: string; remaining: number | null; locating: boolean }> = ({ name, remaining, locating }) => {
   const arrived = remaining !== null && remaining <= ARRIVED_WITHIN_M;
   return (
-    <div className="top-safe pointer-events-auto fixed inset-x-4 z-[1000] flex items-center gap-4 rounded-3xl bg-primary p-5 text-primary-foreground shadow-sheet md:right-auto md:left-[27rem] md:w-96" aria-live="polite">
-      <Navigation className="size-8 shrink-0" aria-hidden="true" />
+    <div className="top-safe pointer-events-auto fixed inset-x-4 z-[1000] flex items-center gap-3 rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground shadow-sheet md:right-auto md:left-[27rem] md:w-80" aria-live="polite">
+      <Navigation className="size-6 shrink-0" aria-hidden="true" />
       <div className="min-w-0">
-        <p className="font-heading text-2xl font-bold tabular-nums">
+        <p className="font-heading text-xl leading-tight font-bold tabular-nums">
           {locating ? 'Finding you…' : arrived ? "You're here" : remaining !== null ? formatDistance(remaining) : 'On your way'}
         </p>
-        <p className="truncate opacity-85">{arrived ? `${name} should be right next to you` : `Walk to ${name}`}</p>
+        <p className="truncate text-sm opacity-85">{arrived ? `${name} should be right next to you` : `Walk to ${name}`}</p>
       </div>
     </div>
   );

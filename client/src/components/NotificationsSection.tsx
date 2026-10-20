@@ -61,6 +61,11 @@ export const NotificationsSection: React.FC = () => {
           setNotice({ tone: 'success', text: 'Notifications are on for this device.' });
         } else if (result === 'denied') {
           setNotice({ tone: 'error', text: 'Notifications are blocked for this site. Allow them in your browser settings, then try again.' });
+        } else if (result === 'untrusted') {
+          setNotice({
+            tone: 'error',
+            text: "Notifications can't start because this page isn't on a trusted https address (your browser is showing a security warning). They work on the live site, or on a local address your phone trusts.",
+          });
         } else if (result === 'unsupported') {
           setNotice({ tone: 'info', text: 'This browser can’t show notifications. On an iPhone, add the app to your Home Screen first.' });
         } else {

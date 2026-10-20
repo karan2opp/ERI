@@ -4,6 +4,7 @@ import type { Drive, LatLng, Role, Tree, User } from '../types';
 import { fetchAdminStats, fetchAdminUsers } from '../services/api';
 import { DriveForm, notifyMessage } from '../components/DriveForm';
 import { AdminReview } from '../components/AdminReview';
+import { AdminCategories } from '../components/AdminCategories';
 import { AdminSettings } from '../components/AdminSettings';
 import { ViewerRoleContext } from '../lib/viewerRole';
 import { useUser } from '@clerk/react';
@@ -22,12 +23,13 @@ import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
-type Tab = 'overview' | 'drives' | 'trees' | 'review' | 'users' | 'settings';
+type Tab = 'overview' | 'drives' | 'trees' | 'categories' | 'review' | 'users' | 'settings';
 
 const TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'drives' as const, label: 'Drives' },
   { value: 'trees' as const, label: 'Trees' },
+  { value: 'categories' as const, label: 'Categories' },
   { value: 'review' as const, label: 'Review' },
   { value: 'users' as const, label: 'Users' },
   { value: 'settings' as const, label: 'Settings' },
@@ -206,6 +208,7 @@ export const AdminPage: React.FC<{
           </>
         )}
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
+        {tab === 'categories' && <AdminCategories />}
         {tab === 'review' && <AdminReview onReviewed={loadPending} />}
         {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
         {tab === 'settings' && <AdminSettings />}

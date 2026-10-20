@@ -16,6 +16,8 @@ import treeRoutes from './module/tree/treeRoutes';
 import adminRoutes from './module/admin/adminRoutes';
 import driveRoutes from './module/drive/driveRoutes';
 import notificationRoutes from './module/notification/notificationRoutes';
+import categoryRoutes from './module/category/categoryRoutes';
+import { ensureDefaultCategories } from './common/services/defaultCategories';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
 
@@ -65,6 +67,7 @@ app.use('/api/v1/trees', treeRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/drives', driveRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/categories', categoryRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);
@@ -97,6 +100,8 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 PlanTree Express server running on port ${PORT} (0.0.0.0)`);
   console.log(`🌐 Allowed Client Origins: ${allowedOrigins.join(', ')}`);
+  // The starting tree categories (once ever); a failure here only logs
+  void ensureDefaultCategories();
 });
 
 const io = new Server(server, {
