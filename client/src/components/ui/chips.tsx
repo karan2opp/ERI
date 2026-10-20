@@ -4,6 +4,8 @@ export interface ChipOption<T extends string> {
   value: T;
   label: string;
   icon?: React.ReactNode;
+  /** Shown but can't be chosen */
+  disabled?: boolean;
 }
 
 /**
@@ -35,10 +37,12 @@ export function Chips<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
+            aria-disabled={o.disabled || undefined}
+            disabled={o.disabled}
             onClick={() => onChange(o.value)}
             className={cn(
               'inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full font-medium whitespace-nowrap transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-45',
               size === 'lg' ? 'h-12 px-5 text-base' : size === 'sm' ? 'h-9 px-3.5 text-[15px]' : 'h-10 px-4 text-[15px]',
               selected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground hover:bg-accent'
             )}

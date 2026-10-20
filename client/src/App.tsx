@@ -438,6 +438,12 @@ function MapApp() {
     setSheet('half');
   };
 
+  // From a drive's page: show the drive on the map and start the walk there
+  const directionsToDrive = (d: Drive) => {
+    showDrive(d);
+    if (d.latitude != null && d.longitude != null) startDirections(d.title, { lat: d.latitude, lng: d.longitude });
+  };
+
   // ---- Planting ----
   // Planting needs an account. Signed out, the sign-in pop-up opens (it has a sign-up link too), and
   // once they are signed in they land on the plant screen. Only if that happens soon after asking, so
@@ -510,6 +516,7 @@ function MapApp() {
     );
     sheetBody = (
       <TreeDetails
+        role={role}
         tree={selectedTree}
         you={you}
         onClose={clearSelection}
@@ -743,6 +750,7 @@ function MapApp() {
 
       {screen === 'myTrees' && (
         <MyTreesPage
+          role={role}
           you={you}
           onClose={back}
           onShowOnMap={(t) => {
@@ -751,6 +759,11 @@ function MapApp() {
           }}
           onPlant={() => replace('plant')}
           onChanged={loadTrees}
+          onEdit={(t) => {
+            setEditing(t);
+            open('edit');
+          }}
+          refreshKey={listRefresh}
         />
       )}
 
@@ -765,6 +778,10 @@ function MapApp() {
             back();
             showDrive(d);
           }}
+          onDirections={(d) => {
+            back();
+            directionsToDrive(d);
+          }}
         />
       )}
 
@@ -776,6 +793,10 @@ function MapApp() {
           onShowDriveOnMap={(d) => {
             back();
             showDrive(d);
+          }}
+          onDirectionsToDrive={(d) => {
+            back();
+            directionsToDrive(d);
           }}
           onShowTreeOnMap={(t) => {
             back();

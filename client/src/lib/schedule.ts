@@ -1,4 +1,5 @@
-import type { Tree } from '../types';
+import type { Role, Tree } from '../types';
+import { isAdminRole } from './roles';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -36,6 +37,63 @@ export function careDue(tree: Tree, now: Date = new Date()): TaskDue[] {
     make('fertilize', 'Fertilise', tree.fertilizeEveryDays, tree.lastFertilizedAt),
     make('weed', 'Remove grass', tree.weedEveryDays, tree.lastWeededAt),
   ];
+}
+
+/** Care can be logged this long before it is due, and not earlier (the server enforces it too). */
+const OPENS_BEFORE_DUE_MS = DAY;
+
+/** The kinds of care that have a schedule. Pruning and checking don't, so they're never locked. */
+const SCHEDULE_OF: Record<string, { last: 'lastWateredAt' | 'lastFertilizedAt' | 'lastWeededAt'; every: 'waterEveryDays' | 'fertilizeEveryDays' | 'weedEveryDays'; noun: string }> = {
+  WATERED: { last: 'lastWateredAt', every: 'waterEveryDays', noun: 'Watering' },
+  FERTILIZED: { last: 'lastFertilizedAt', every: 'fertilizeEveryDays', noun: 'Fertilising' },
+  WEEDED: { last: 'lastWeededAt', every: 'weedEveryDays', noun: 'Removing the grass' },
+};
+
+/** "3 days 22 h", "5 h", "20 min". */
+export function waitText(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return `${days} ${days === 1 ? 'day' : 'days'}${rest ? ` ${rest} h` : ''}`;
+}
+
+/** One unit, rounded up, for a small button: "4 d", "5 h", "20 min". */
+function shortWait(ms: number): string {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  return `${Math.ceil(hours / 24)} d`;
+}
+
+export interface CareLock {
+  locked: boolean;
+  /** When it opens (only when locked) */
+  opensAt: Date | null;
+  /** "Watering opens in 3 days 22 h", or null when it's open */
+  text: string | null;
+  /** A short form for a small button: "in 3 d" */
+  short: string | null;
+}
+
+/**
+ * Whether this kind of care can be logged right now. It opens a day before it is due: a tree watered every
+ * 5 days can be watered again from day 4. Admins and super admins can always log care.
+ */
+export function careLock(tree: Tree, action: string, role: Role, now: Date = new Date()): CareLock {
+  const open: CareLock = { locked: false, opensAt: null, text: null, short: null };
+  const rule = SCHEDULE_OF[action];
+  if (!rule || isAdminRole(role)) return open;
+  // Never watered counts as "needs water", so watering is open
+  if (action === 'WATERED' && !tree.lastWateredAt) return open;
+  const base = new Date(tree[rule.last] ?? tree.plantedAt).getTime();
+  const opensAt = new Date(base + tree[rule.every] * DAY - OPENS_BEFORE_DUE_MS);
+  const ms = opensAt.getTime() - now.getTime();
+  if (ms <= 0) return open;
+  return { locked: true, opensAt, text: `${rule.noun} opens in ${waitText(ms)}`, short: `in ${shortWait(ms)}` };
 }
 
 /** "Due today", "Due tomorrow", "Due in 5 days", "Overdue by 2 days". */

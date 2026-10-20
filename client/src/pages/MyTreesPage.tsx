@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Droplets, Plus, Search } from 'lucide-react';
-import type { LatLng, Tree } from '../types';
+import { Droplets, Pencil, Plus, Search } from 'lucide-react';
+import type { LatLng, Role, Tree } from '../types';
+import { careLock } from '../lib/schedule';
 import { browseTrees, logCareActivity, type Paged, type TreeSort } from '../services/api';
 import { STATUS_LABEL, isPending, timeAgo, treeStatus } from '../lib/trees';
 import { formatAgeShort, treeAge } from '../lib/age';
@@ -38,7 +39,13 @@ export const MyTreesPage: React.FC<{
   onShowOnMap: (tree: Tree) => void;
   onPlant: () => void;
   onChanged: () => void;
-}> = ({ you, onClose, onShowOnMap, onPlant, onChanged }) => {
+  /** Admins can water at any time; everyone else from a day before it's due */
+  role: Role;
+  /** Opens the edit screen for one of your trees */
+  onEdit: (tree: Tree) => void;
+  /** Changes when something outside this page changed a tree (an edit), so the list reloads */
+  refreshKey?: number;
+}> = ({ you, onClose, onShowOnMap, onPlant, onChanged, role, onEdit, refreshKey = 0 }) => {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<Sort>('NEWEST');
@@ -79,7 +86,7 @@ export const MyTreesPage: React.FC<{
     };
     // `you` is represented by `area`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search, sort, area, version]);
+  }, [page, search, sort, area, version, refreshKey]);
 
   const planted = result?.summary?.total ?? 0;
   const thirsty = result?.summary?.thirsty ?? 0;
@@ -94,8 +101,11 @@ export const MyTreesPage: React.FC<{
       setNotice({ tone: 'success', text: `${tree.name} watered.` });
       setVersion((v) => v + 1);
       onChanged();
-    } catch {
-      setNotice({ tone: 'error', text: `Couldn't log watering for ${tree.name}. Try again.` });
+    } catch (err) {
+      // The server says why (for example, it isn't open yet)
+      const why = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setNotice({ tone: 'error', text: why || `Couldn't log watering for ${tree.name}. Try again.` });
+      setVersion((v) => v + 1);
     } finally {
       setWatering(null);
     }
@@ -170,6 +180,9 @@ export const MyTreesPage: React.FC<{
                           An admin is checking the photo. It goes on the map once approved.
                         </span>
                       </span>
+                      <Button variant="ghost" size="sm" onClick={() => onEdit(t)} aria-label={`Edit ${t.name}`}>
+                        <Pencil className="size-4" aria-hidden="true" /> Edit
+                      </Button>
                     </li>
                   );
                 }
@@ -187,10 +200,26 @@ export const MyTreesPage: React.FC<{
                         </span>
                       </span>
                     </button>
-                    <Button variant={status === 'thirsty' ? 'default' : 'secondary'} onClick={() => water(t)} disabled={watering === t.id} aria-label={`Mark ${t.name} as watered`}>
-                      {watering === t.id ? <Spinner className="size-4" /> : <Droplets aria-hidden="true" />}
-                      Water
-                    </Button>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {(() => {
+                        const lock = careLock(t, 'WATERED', role);
+                        return (
+                          <Button
+                            variant={status === 'thirsty' ? 'default' : 'secondary'}
+                            onClick={() => water(t)}
+                            disabled={watering === t.id || lock.locked}
+                            aria-label={lock.locked ? `${t.name}: ${lock.text}` : `Mark ${t.name} as watered`}
+                            title={lock.text ?? undefined}
+                          >
+                            {watering === t.id ? <Spinner className="size-4" /> : <Droplets aria-hidden="true" />}
+                            {lock.locked ? `Water ${lock.short}` : 'Water'}
+                          </Button>
+                        );
+                      })()}
+                      <Button variant="ghost" size="sm" onClick={() => onEdit(t)} aria-label={`Edit ${t.name}`} title="Edit this tree">
+                        <Pencil className="size-4" aria-hidden="true" /> Edit
+                      </Button>
+                    </div>
                   </li>
                 );
               })}

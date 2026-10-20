@@ -10,7 +10,7 @@ import { DrivesBrowser } from '../components/DrivesBrowser';
  * everyone; team members also see team-only drives, and admins see all of them (the server decides).
  * Opening a drive lays its page over the list, so going back keeps the search, filters and page you were on.
  */
-export const DrivesPage: React.FC<{ role: Role; you: LatLng | null; onClose: () => void; onShowOnMap: (d: Drive) => void }> = ({ role, you, onClose, onShowOnMap }) => {
+export const DrivesPage: React.FC<{ role: Role; you: LatLng | null; onClose: () => void; onShowOnMap: (d: Drive) => void; onDirections: (d: Drive) => void }> = ({ role, you, onClose, onShowOnMap, onDirections }) => {
   const [open, setOpen] = useState<Drive | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const team = canSeeTeamDrives(role);
@@ -25,6 +25,7 @@ export const DrivesPage: React.FC<{ role: Role; you: LatLng | null; onClose: () 
             drive={open}
             you={you}
             onShowOnMap={onShowOnMap}
+            onDirections={onDirections}
             showVisibility={team}
             onUpdated={isAdminRole(role) ? (d) => { setOpen(d); setRefreshKey((k) => k + 1); } : undefined}
             onDeleted={isAdminRole(role) ? () => { setOpen(null); setRefreshKey((k) => k + 1); } : undefined}

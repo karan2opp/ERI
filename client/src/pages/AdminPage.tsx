@@ -169,8 +169,9 @@ export const AdminPage: React.FC<{
   you: LatLng | null;
   onClose: () => void;
   onShowDriveOnMap: (d: Drive) => void;
+  onDirectionsToDrive: (d: Drive) => void;
   onShowTreeOnMap: (t: Tree) => void;
-}> = ({ role, you, onClose, onShowDriveOnMap, onShowTreeOnMap }) => {
+}> = ({ role, you, onClose, onShowDriveOnMap, onDirectionsToDrive, onShowTreeOnMap }) => {
   const [tab, setTab] = useState<Tab>('overview');
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
@@ -220,6 +221,7 @@ export const AdminPage: React.FC<{
             drive={drive}
             you={you}
             onShowOnMap={onShowDriveOnMap}
+            onDirections={onDirectionsToDrive}
             showVisibility
             onUpdated={(d, notifying) => {
               setDrive(d);

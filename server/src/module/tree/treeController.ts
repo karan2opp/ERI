@@ -278,7 +278,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    if (existingTree.userId !== userId) {
+    if (existingTree.userId !== userId && !isAdminRole(req.userRole)) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden: You can edit only trees registered by you'
@@ -365,7 +365,7 @@ export const deleteTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    if (existingTree.userId !== userId) {
+    if (existingTree.userId !== userId && !isAdminRole(req.userRole)) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden: You can delete only trees registered by you'

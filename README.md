@@ -159,3 +159,8 @@ Set it up with `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-
 
 Each tree has three schedules, set when it is planted and editable later: **water every N days** (default 7), **fertilise every N days** (default 60) and **remove the grass every N days** (default 30). A tree "needs water" once it is past its own watering interval. Every care action (watered, fertilised, grass removed, pruned, checked) is logged with its date, time and who did it, and the tree shows when each task is next due.
 - Live location: anyone can watch a tracking room, but only signed-in sockets can broadcast, and the broadcaster's identity comes from their token.
+
+**Editing a tree.** The person who planted a tree (a normal user or a team member) can edit its details from **My trees → Edit** or from the tree on the map: photo, name, kind, address, notes, health, planting date and care intervals, including while it is waiting for review. Admins and super admins can edit or remove any tree.
+
+**When care can be logged.** Watering, fertilising and removing grass are locked until **one day before they are due**: a tree watered every 5 days can be watered again from day 4, so tapping Water over and over can't log it repeatedly. The buttons show when they open ("Water in 4 d"). The interval is set by whoever plants the tree (and can be changed later in Edit); **admins and super admins can change any tree's schedule, edit or remove any tree, and log care at any time**. Pruning and checking have no schedule, so they are never locked. The server enforces this (a locked request gets a 409 `TOO_SOON` with when it opens), and two taps at the same moment can't both get through. Nothing needs `db:push` for this.
+

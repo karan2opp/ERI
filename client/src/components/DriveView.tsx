@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlignLeft, Calendar, Check, Clock, ExternalLink, Map as MapIcon, MapPin, Share2, Type } from 'lucide-react';
+import { AlignLeft, Calendar, Check, Clock, ExternalLink, Map as MapIcon, MapPin, Navigation, Share2, Type } from 'lucide-react';
 import type { Drive, LatLng } from '../types';
 import { driveMapsUrl, driveStartsAt, isUpcoming, shareDrive } from '../lib/drives';
 import { formatDistance, getDistanceInMeters } from '../utils/geo';
@@ -32,13 +32,15 @@ export const DriveView: React.FC<{
   drive: Drive;
   you: LatLng | null;
   onShowOnMap: (d: Drive) => void;
+  /** Starts walking directions to the drive on our own map */
+  onDirections?: (d: Drive) => void;
   /** Team members and admins also see who can see the drive */
   showVisibility?: boolean;
   /** Admins can edit the drive; called with the saved drive */
   onUpdated?: (drive: Drive, notifying?: Notifying) => void;
   /** Admins can delete the drive; called once it is gone, so the page can close */
   onDeleted?: (notifying?: Notifying) => void;
-}> = ({ drive, you, onShowOnMap, showVisibility = false, onUpdated, onDeleted }) => {
+}> = ({ drive, you, onShowOnMap, onDirections, showVisibility = false, onUpdated, onDeleted }) => {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -104,10 +106,17 @@ export const DriveView: React.FC<{
         </DetailRow>
       </dl>
 
-      {maps && (
-        <a href={maps} target="_blank" rel="noopener noreferrer" className={buttonClass('default', 'xl', 'w-full')}>
-          <ExternalLink aria-hidden="true" /> Get directions
-        </a>
+      {/* Get directions starts the walk on our own map; Google Maps is its own separate option below */}
+      {spot && onDirections ? (
+        <Button size="xl" className="w-full" onClick={() => onDirections(drive)}>
+          <Navigation aria-hidden="true" /> Get directions
+        </Button>
+      ) : (
+        maps && (
+          <a href={maps} target="_blank" rel="noopener noreferrer" className={buttonClass('default', 'xl', 'w-full')}>
+            <ExternalLink aria-hidden="true" /> Get directions
+          </a>
+        )
       )}
       {/* One button fills the row; two share it */}
       <div className={spot ? 'grid grid-cols-2 gap-2' : 'flex'}>
@@ -120,6 +129,11 @@ export const DriveView: React.FC<{
           </Button>
         )}
       </div>
+      {maps && spot && onDirections && (
+        <a href={maps} target="_blank" rel="noopener noreferrer" className={buttonClass('secondary', 'xl', 'w-full')}>
+          <ExternalLink aria-hidden="true" /> Open in Google Maps
+        </a>
+      )}
 
       {/* Admins decide what kind of drive it is and who sees it */}
       {onUpdated && (

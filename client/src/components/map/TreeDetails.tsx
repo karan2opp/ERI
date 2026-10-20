@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { SignInButton, useUser } from '@clerk/react';
 import { Camera, Droplets, Navigation, Pencil, Radio, Trash2, X } from 'lucide-react';
-import type { LatLng, Tree } from '../../types';
+import type { LatLng, Role, Tree } from '../../types';
+import { careLock } from '../../lib/schedule';
+import { isAdminRole } from '../../lib/roles';
 import { deleteTree, logCareActivity } from '../../services/api';
 import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, isDemoTree, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
@@ -47,8 +49,11 @@ const HealthMeter: React.FC<{ score: number }> = ({ score }) => {
   );
 };
 
-const CareForm: React.FC<{ tree: Tree; onDone: (outcome: Outcome) => void; onCancel: () => void }> = ({ tree, onDone, onCancel }) => {
-  const [action, setAction] = useState<CareAction>('WATERED');
+const CareForm: React.FC<{ tree: Tree; role: Role; onDone: (outcome: Outcome) => void; onCancel: () => void }> = ({ tree, role, onDone, onCancel }) => {
+  // Watering, feeding and removing grass open a day before they're due; start on the first one that's open
+  const locks = Object.fromEntries(CARE_ACTIONS.map((a) => [a, careLock(tree, a, role)])) as Record<CareAction, ReturnType<typeof careLock>>;
+  const [action, setAction] = useState<CareAction>(() => CARE_ACTIONS.find((a) => !locks[a].locked) ?? 'PRUNED');
+  const lockedNotes = CARE_ACTIONS.filter((a) => locks[a].locked).map((a) => locks[a].text);
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -92,9 +97,10 @@ const CareForm: React.FC<{ tree: Tree; onDone: (outcome: Outcome) => void; onCan
         label="Care activity"
         value={action}
         onChange={setAction}
-        options={CARE_ACTIONS.map((a) => ({ value: a, label: CARE_LABEL[a] }))}
+        options={CARE_ACTIONS.map((a) => ({ value: a, label: CARE_LABEL[a], disabled: locks[a].locked }))}
         className="flex-wrap"
       />
+      {lockedNotes.length > 0 && <p className="text-sm text-muted-foreground">{lockedNotes.join(' · ')}. Each opens a day before it's due.</p>}
       <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add a note (optional), e.g. 5 litres and fresh mulch" rows={2} maxLength={2000} aria-label="Note" className="bg-card" />
       {/* A care photo is taken live with the camera; there's no way to pick an existing one */}
       {preview ? (
@@ -142,7 +148,9 @@ export const TreeDetails: React.FC<{
   onEdit: () => void;
   onChanged: () => void;
   onDeleted: () => void;
-}> = ({ tree, you, onClose, onDirections, onWalkLive, onEdit, onChanged, onDeleted }) => {
+  /** Your role: admins can edit and remove any tree, and log care at any time */
+  role: Role;
+}> = ({ tree, you, onClose, onDirections, onWalkLive, onEdit, onChanged, onDeleted, role }) => {
   const { user, isSignedIn } = useUser();
   const [caring, setCaring] = useState(false);
   const [watering, setWatering] = useState(false);
@@ -156,6 +164,8 @@ export const TreeDetails: React.FC<{
   const hours = hoursSinceWatered(tree);
   const meters = you ? getDistanceInMeters(you.lat, you.lng, tree.latitude, tree.longitude) : null;
   const isOwner = Boolean(isSignedIn && user && (user.id === tree.userId || user.id === tree.owner?.id));
+  // The planter manages their tree; admins and super admins manage every tree
+  const canManage = isOwner || (Boolean(isSignedIn) && isAdminRole(role));
 
   // Care history from the server, 10 entries at a time (sample trees have none)
   const care = useCareHistory(demo ? null : tree.id);
@@ -267,7 +277,7 @@ export const TreeDetails: React.FC<{
         )}
       </div>
 
-      {caring && <CareForm tree={tree} onDone={careDone} onCancel={() => setCaring(false)} />}
+      {caring && <CareForm tree={tree} role={role} onDone={careDone} onCancel={() => setCaring(false)} />}
 
       {/* Its age, counted from planting like a birthday */}
       <TreeAge plantedAt={tree.plantedAt} />
@@ -295,7 +305,7 @@ export const TreeDetails: React.FC<{
         </div>
       </div>
 
-      {isOwner && !demo && (
+      {canManage && !demo && (
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" size="lg" onClick={onEdit}>
             <Pencil aria-hidden="true" /> Edit
