@@ -31,7 +31,7 @@ const distanceTo = (you: LatLng | null, t: Tree) => (you ? getDistanceInMeters(y
 /** One tree in a list: status dot, name, species and status, distance on the right. */
 export const TreeRow: React.FC<{ tree: Tree & { distance?: number }; you: LatLng | null; onSelect: (tree: Tree) => void }> = ({ tree, you, onSelect }) => {
   const status = treeStatus(tree);
-  // The server works out the distance for listed trees; sample trees are measured here
+  // The server works out the distance for listed trees; trees from the map are measured here
   const meters = tree.distance ?? distanceTo(you, tree);
   return (
     <li>
@@ -56,7 +56,6 @@ export const TreeRow: React.FC<{ tree: Tree & { distance?: number }; you: LatLng
 /**
  * The sheet's resting content: search, distance filter and the trees around you, 10 at a time.
  * The server filters, sorts (nearest first) and pages the list; the browser only shows one page.
- * While there are no real trees yet, the client-side `samples` are shown instead.
  */
 export const NearbyPanel: React.FC<{
   you: LatLng | null;
@@ -69,13 +68,11 @@ export const NearbyPanel: React.FC<{
   onSelectTree: (tree: Tree) => void;
   onSelectPlace: (place: LatLng) => void;
   onPlant: () => void;
-  /** Sample trees to list when the server has none */
-  samples: Tree[] | null;
   /** Bump to reload (after planting, caring, editing or removing a tree) */
   refreshKey: number;
   /** Reports how many trees match, for the header */
   onTotal: (total: number | null) => void;
-}> = ({ you, status, query, onQueryChange, onSearchFocus, distance, onDistanceChange, onSelectTree, onSelectPlace, onPlant, samples, refreshKey, onTotal }) => {
+}> = ({ you, status, query, onQueryChange, onSearchFocus, distance, onDistanceChange, onSelectTree, onSelectPlace, onPlant, refreshKey, onTotal }) => {
   const search = useSearch(query, you);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<Paged<Tree & { distance?: number }> | null>(null);
@@ -90,7 +87,6 @@ export const NearbyPanel: React.FC<{
   useEffect(() => setPage(1), [status, distance, area]);
 
   useEffect(() => {
-    if (samples) return;
     let cancelled = false;
     setLoading(true);
     browseTrees({
@@ -120,15 +116,9 @@ export const NearbyPanel: React.FC<{
     };
     // `you` is represented by `area`
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, radius, area, refreshKey, Boolean(samples)]);
+  }, [page, status, radius, area, refreshKey]);
 
-  useEffect(() => {
-    if (samples) onTotal(samples.length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [samples?.length]);
-
-  const rows = samples ?? result?.data ?? [];
-  const showingDemo = Boolean(samples && samples.length > 0);
+  const rows = result?.data ?? [];
 
   return (
     <div className="flex flex-col gap-4 pb-4">
@@ -203,15 +193,9 @@ export const NearbyPanel: React.FC<{
             <Chips label="Distance from you" options={DISTANCES} value={distance} onChange={onDistanceChange} className="no-scrollbar -mx-5 overflow-x-auto px-5" />
           )}
 
-          {showingDemo && (
-            <Alert tone="info" title="These are sample trees">
-              Plant the first real tree and it'll show up for everyone.
-            </Alert>
-          )}
-
-          {failed && !samples ? (
+          {failed ? (
             <Alert tone="error">Couldn't load trees. Check your connection and try again.</Alert>
-          ) : loading && !result && !samples ? (
+          ) : loading && !result ? (
             <Spinner label="Loading trees" />
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -236,7 +220,7 @@ export const NearbyPanel: React.FC<{
                   <TreeRow key={t.id} tree={t} you={you} onSelect={onSelectTree} />
                 ))}
               </ul>
-              {result && !samples && (
+              {result && (
                 <Pager
                   page={result.page}
                   totalPages={result.totalPages}

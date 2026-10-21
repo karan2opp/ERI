@@ -6,8 +6,7 @@ import { browseTrees, fetchGlobalDrives, fetchTreeById, fetchTreePins, setAuthTo
 import { pinFromTree, snapToTiles, type MapView } from './lib/pins';
 import { reconnectSocket } from './utils/socket';
 import { formatDistance, formatMinutes, getDistanceInMeters } from './utils/geo';
-import { STATUS_LABEL, treeStatus, isDemoTree } from './lib/trees';
-import { sampleTreesAround } from './lib/demo';
+import { STATUS_LABEL, treeStatus } from './lib/trees';
 import { useWalkingRoute } from './lib/route';
 import { useHeading } from './lib/heading';
 import { asRole, canSeeTeamDrives, isAdminRole } from './lib/roles';
@@ -281,8 +280,6 @@ function MapApp() {
   const [pins, setPins] = useState<PinsResult | null>(null);
   // Bumped after a change, so the map skips its 30-second cached answer and shows the change at once
   const [pinsVersion, setPinsVersion] = useState(0);
-  // No verified trees anywhere yet: show sample trees so a new map isn't empty
-  const [noTreesYet, setNoTreesYet] = useState(false);
   // Your tree counts (profile drawer and Account), from the server
   const [myTreeSummary, setMyTreeSummary] = useState<{ total: number; thirsty: number } | null>(null);
   // Pins only carry what the map draws; the selected tree's full details are fetched when it's tapped
@@ -297,7 +294,7 @@ function MapApp() {
     setListRefresh((k) => k + 1);
     // Refresh the open tree too (e.g. after watering it)
     const sel = selectionRef.current;
-    if (sel?.kind === 'tree' && !isDemoTree({ id: sel.id })) fetchTreeById(sel.id).then(setSelectedTreeData, () => {});
+    if (sel?.kind === 'tree') fetchTreeById(sel.id).then(setSelectedTreeData, () => {});
   }, []);
 
   // Pins for what's on screen, or for the distance filter around you. Waits until the map has stopped
@@ -316,7 +313,6 @@ function MapApp() {
       fetchTreePins(params, controller.signal).then(
         (res) => {
           setPins(res);
-          setNoTreesYet(res.empty);
         },
         () => {
           // Keep the pins already on screen
@@ -353,32 +349,11 @@ function MapApp() {
     if (screen === 'map') loadDrives();
   }, [screen, loadDrives, role]);
 
-  // Sample trees only while there are no real ones anywhere (they live in the browser, so they're filtered here)
-  const sampleCenter = you ?? start;
-  const samples = useMemo<Tree[] | null>(
-    () => (noTreesYet && sampleCenter ? sampleTreesAround(sampleCenter) : null),
-    // Place samples once, where you first are
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noTreesYet, Boolean(sampleCenter)]
-  );
-
-  const filteredSamples = useMemo(() => {
-    if (!samples) return [];
-    const radius = distance === 'ALL' ? null : Number(distance);
-    return samples.filter((t) => {
-      if (status === 'THIRSTY' && treeStatus(t) !== 'thirsty') return false;
-      if (status === 'HEALTHY' && treeStatus(t) !== 'healthy') return false;
-      if (status === 'MINE' && !(userId && (t.userId === userId || t.owner?.id === userId))) return false;
-      if (radius && you && getDistanceInMeters(you.lat, you.lng, t.latitude, t.longitude) > radius) return false;
-      return true;
-    });
-  }, [samples, status, distance, you, userId]);
-
-  const mapPins: PinsResult | null = samples ? { kind: 'trees', data: filteredSamples.map(pinFromTree), empty: false } : pins;
+  const mapPins: PinsResult | null = pins;
 
   const selectedTree =
     selection?.kind === 'tree'
-      ? samples?.find((t) => t.id === selection.id) ?? (selectedTreeData?.id === selection.id ? selectedTreeData : null)
+      ? selectedTreeData?.id === selection.id ? selectedTreeData : null
       : null;
   const selectedDrive = selection?.kind === 'drive' ? drives?.find((d) => d.id === selection.id) ?? null : null;
   // Pin upcoming drives (and a past one only while it's selected)
@@ -402,7 +377,6 @@ function MapApp() {
     setSelection({ kind: 'tree', id: pin.id });
     setSheet('half');
     setFlyTo({ lat: pin.lat, lng: pin.lng, timestamp: Date.now() });
-    if (isDemoTree({ id: pin.id })) return;
     fetchTreeById(pin.id).then(
       (tree) => {
         if (selectionRef.current?.kind === 'tree' && selectionRef.current.id === tree.id) setSelectedTreeData(tree);
@@ -472,7 +446,7 @@ function MapApp() {
   };
 
   // ---- What the sheet shows ----
-  const liveRoom = walkLive?.room ?? (selectedTree && !isDemoTree(selectedTree) ? `plant_${selectedTree.id}` : selectedDrive ? `drive_${selectedDrive.id}` : null);
+  const liveRoom = walkLive?.room ?? (selectedTree ? `plant_${selectedTree.id}` : selectedDrive ? `drive_${selectedDrive.id}` : null);
   const navigating = Boolean(destination);
 
   let sheetLabel = 'Trees near you';
@@ -583,7 +557,6 @@ function MapApp() {
         )}
         <NearbyPanel
           status={status}
-          samples={samples}
           refreshKey={listRefresh}
           onTotal={setListTotal}
           you={you}

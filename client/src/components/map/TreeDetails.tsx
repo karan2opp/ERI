@@ -5,7 +5,7 @@ import type { LatLng, Role, Tree } from '../../types';
 import { careLock } from '../../lib/schedule';
 import { isAdminRole } from '../../lib/roles';
 import { deleteTree, logCareActivity } from '../../services/api';
-import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, isDemoTree, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
+import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { Badge } from '../ui/badge';
 import { ExpandableText } from '../ui/expandable-text';
@@ -159,7 +159,6 @@ export const TreeDetails: React.FC<{
   const [deleting, setDeleting] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
 
-  const demo = isDemoTree(tree);
   const status = treeStatus(tree);
   const hours = hoursSinceWatered(tree);
   const meters = you ? getDistanceInMeters(you.lat, you.lng, tree.latitude, tree.longitude) : null;
@@ -167,8 +166,8 @@ export const TreeDetails: React.FC<{
   // The planter manages their tree; admins and super admins manage every tree
   const canManage = isOwner || (Boolean(isSignedIn) && isAdminRole(role));
 
-  // Care history from the server, 10 entries at a time (sample trees have none)
-  const care = useCareHistory(demo ? null : tree.id);
+  // Care history from the server, 10 entries at a time
+  const care = useCareHistory(tree.id);
   const history = care.items;
 
   useEffect(() => {
@@ -226,7 +225,6 @@ export const TreeDetails: React.FC<{
           <p className="truncate text-muted-foreground">{tree.species}</p>
           <div className="flex flex-wrap gap-1.5">
             <Badge variant={status}>{STATUS_LABEL[status]}</Badge>
-            {demo && <Badge variant="outline">Sample</Badge>}
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close tree details" className="-mt-1 -mr-2">
@@ -234,7 +232,7 @@ export const TreeDetails: React.FC<{
         </Button>
       </div>
 
-      {status === 'thirsty' && !demo && (
+      {status === 'thirsty' && (
         <Alert
           tone="thirsty"
           title="Needs water"
@@ -261,20 +259,18 @@ export const TreeDetails: React.FC<{
         <Button size="xl" onClick={onDirections} className="w-full">
           <Navigation aria-hidden="true" /> Directions
         </Button>
-        {!demo && (
-          <div className="grid grid-cols-2 gap-2">
-            {gated(
-              <Button variant="secondary" size="xl" onClick={isSignedIn ? () => setCaring(true) : undefined} disabled={caring}>
-                <Droplets aria-hidden="true" /> Log care
-              </Button>
-            )}
-            {gated(
-              <Button variant="secondary" size="xl" onClick={isSignedIn ? onWalkLive : undefined}>
-                <Radio aria-hidden="true" /> Walk live
-              </Button>
-            )}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-2">
+          {gated(
+            <Button variant="secondary" size="xl" onClick={isSignedIn ? () => setCaring(true) : undefined} disabled={caring}>
+              <Droplets aria-hidden="true" /> Log care
+            </Button>
+          )}
+          {gated(
+            <Button variant="secondary" size="xl" onClick={isSignedIn ? onWalkLive : undefined}>
+              <Radio aria-hidden="true" /> Walk live
+            </Button>
+          )}
+        </div>
       </div>
 
       {caring && <CareForm tree={tree} role={role} onDone={careDone} onCancel={() => setCaring(false)} />}
@@ -284,7 +280,7 @@ export const TreeDetails: React.FC<{
 
       <CareSummary tree={tree} history={history} />
 
-      {!demo && <CareSchedule tree={tree} />}
+      <CareSchedule tree={tree} />
 
       <HealthMeter score={tree.healthScore} />
 
@@ -305,7 +301,7 @@ export const TreeDetails: React.FC<{
         </div>
       </div>
 
-      {canManage && !demo && (
+      {canManage && (
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" size="lg" onClick={onEdit}>
             <Pencil aria-hidden="true" /> Edit
@@ -324,7 +320,7 @@ export const TreeDetails: React.FC<{
         {history === null ? (
           <Spinner label="Loading care history" />
         ) : history.length === 0 ? (
-          <p className="text-muted-foreground">{demo ? 'Sample trees have no history.' : 'No care logged yet. Be the first to water it.'}</p>
+          <p className="text-muted-foreground">No care logged yet. Be the first to water it.</p>
         ) : (
           <CareTimeline
             history={history}
@@ -332,7 +328,7 @@ export const TreeDetails: React.FC<{
             onLoadMore={care.loadMore}
             loadingMore={care.loadingMore}
             treePhotoUrl={tree.photoUrl}
-            photoEditor={canManage && !demo ? { treeId: tree.id, onChanged: care.reload } : undefined}
+            photoEditor={canManage ? { treeId: tree.id, onChanged: care.reload } : undefined}
           />
         )}
       </section>

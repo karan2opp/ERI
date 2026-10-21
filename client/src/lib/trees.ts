@@ -27,9 +27,6 @@ export const STATUS_LABEL: Record<TreeStatus, string> = {
   thirsty: 'Needs water',
 };
 
-/** Demo and sample trees are generated on the client and don't exist on the server. */
-export const isDemoTree = (tree: Pick<Tree, 'id'>) => tree.id.startsWith('demo-') || tree.id.startsWith('mock-');
-
 /** "just now", "5 min ago", "3 h ago", "2 days ago", then a date. */
 export const timeAgo = (iso: string): string => {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
