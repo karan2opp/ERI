@@ -94,5 +94,17 @@ export interface Drive {
   googleMapsUrl?: string | null;
   type: DriveType;
   visibility: DriveVisibility;
+  /** COMPLETED once an admin has wrapped it up: its summary and pictures are then shown to everyone who can see the drive */
+  status?: 'SCHEDULED' | 'COMPLETED';
+  /** How the drive went. Admins also see a draft before the drive is completed. */
+  summary?: string | null;
+  completedAt?: string | null;
   createdAt?: string;
+}
+
+/** A picture an admin added to a drive */
+export interface DrivePhoto {
+  id: string;
+  url: string;
+  createdAt: string;
 }

@@ -37,7 +37,7 @@ export const DriveDetails: React.FC<{
           <div className="flex flex-wrap gap-1.5">
             <DriveTypeBadge type={drive.type} />
             {showVisibility && <DriveVisibilityBadge visibility={drive.visibility} />}
-            {!isUpcoming(drive) && <Badge variant="outline">Past</Badge>}
+            {drive.status === 'COMPLETED' ? <Badge variant="healthy">Completed</Badge> : !isUpcoming(drive) && <Badge variant="outline">Past</Badge>}
           </div>
           <h2 className="text-xl leading-tight">{drive.title}</h2>
           <p className="flex items-center gap-2 text-muted-foreground">

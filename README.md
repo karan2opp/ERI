@@ -118,6 +118,26 @@ Admins can **edit and delete drives** (open a drive from Admin → Drives → Ed
 - Set `APP_URL` to the public address so links in emails are right (it defaults to the first `CLIENT_ORIGIN`).
 - Sending happens in the background after the admin's save, so a big audience never makes the page wait. Push subscriptions the browser reports as gone are removed automatically.
 
+## ✅ Completing a drive: summary and pictures
+
+After a drive, an admin opens it (Admin → Drives, or the Drives page) and uses **Wrap up this drive**: write a **summary** of how it went, add **pictures** from the phone or computer, and tap **Mark as completed**. Until then the summary and pictures are a draft that only admins can see; the drive stays in the normal list.
+
+- **Who sees the result:** everyone who can see the drive, once it is completed. A drive for everyone shows its summary and pictures to anyone (even signed out, including on its share link); a team-only drive shows them only to team members and admins. The server enforces this for the drive, the list and the pictures route, so a team-only drive's pictures never reach anyone else.
+- **How many pictures:** admins choose in **Admin → Settings → Drive pictures** (1 to 50, default 10). The server refuses a picture past the limit, even for several uploads at once. If the limit is lowered below what a drive already has, it keeps its pictures but can't get more until some are removed.
+- **Changing pictures:** each picture has a **replace** button (swap it for another, keeping its place) and a **remove** button (asks first); only admins see them, and the server refuses anyone else (`PUT` and `DELETE /api/v1/drives/:id/photos/:photoId`).
+- **After completing:** the drive moves from *Upcoming* to *Past* (history) and gets a *Completed* badge. An admin can still rewrite the summary, add or remove pictures, or **Reopen** the drive, which hides the summary and pictures from everyone but admins again. A completed drive can't have its summary emptied.
+- Pictures are JPG, PNG or WEBP up to 10 MB, stored in Cloudinary (`plantree/drives`) and removed from there when a picture or the drive is deleted. They are not sent to the AI photo check, since only admins add them.
+
+| Route | What |
+|---|---|
+| `PATCH /api/v1/drives/:id` `{ summary }` | Admin: save the summary (a draft until completed) |
+| `POST /api/v1/drives/:id/photos` (multipart `photo`) | Admin: add a picture, up to the limit |
+| `DELETE /api/v1/drives/:id/photos/:photoId` | Admin: remove a picture |
+| `POST /api/v1/drives/:id/complete` `{ summary? }` and `/reopen` | Admin: complete a drive (needs a summary) or undo it |
+| `GET /api/v1/drives/:id/photos?page=&limit=` | Pictures, 10 per page (up to 50), if you may see the drive and it is completed (admins always) |
+
+New drive columns (`status`, `summary`, `completed_at`, `completed_by`) and the `drive_photos` table need `npm run db:push`.
+
 ## 🔑 Passwords
 
 Account → **Change password** is only shown to people who have a password. Someone who signs in with Google alone has none, so they see no password section. People with a password can change it with their current one, or choose **Forgot your password? → Email me a code**: a 6-digit code is emailed to their address (it works for 10 minutes, is stored only as a hash, is used up once, and stops working after 5 wrong tries; a new code can be requested once a minute and 10 requests an hour are allowed). Clerk won't start its own email reset for someone who is already signed in, so the server sends and checks the code (`POST /users/me/password-reset` and `/confirm`) and sets the new password through Clerk. This needs email set up (`RESEND_API_KEY` and `EMAIL_FROM`); other devices are signed out afterwards. Run `npm run db:push` for the new `password_reset_codes` table.
@@ -160,7 +180,7 @@ Set it up with `OPENAI_API_KEY` (and optionally `OPENAI_MODEL`, default `gpt-4o-
 Each tree has three schedules, set when it is planted and editable later: **water every N days** (default 7), **fertilise every N days** (default 60) and **remove the grass every N days** (default 30). A tree "needs water" once it is past its own watering interval. Every care action (watered, fertilised, grass removed, pruned, checked) is logged with its date, time and who did it, and the tree shows when each task is next due.
 - Live location: anyone can watch a tracking room, but only signed-in sockets can broadcast, and the broadcaster's identity comes from their token.
 
-**Editing a tree.** The person who planted a tree (a normal user or a team member) can edit its details from **My trees → Edit** or from the tree on the map: photo, name, kind, address, notes, health, planting date and care intervals, including while it is waiting for review. Admins and super admins can edit or remove any tree.
+**Editing a tree.** The person who planted a tree (a normal user or a team member) can edit its details from **My trees → Edit** or from the tree on the map: photo, name, kind, address, notes, health, planting date and care intervals, including while it is waiting for review. Admins and super admins can edit or remove any tree. **Photos can only be changed by the tree's owner or an admin** (the server checks it, so team members and other users get a 403): the tree's main photo is replaced in **Edit** (a tree always has one, so to get rid of it the whole tree is deleted), and the photo on any care entry in the tree's history can be **retaken** with the camera or **removed** (`PUT` and `DELETE /api/v1/trees/:treeId/care/:logId/photo`; the entry itself stays). Replacing a tree's photo also clears the copy of the old photo on its planting entry, so no broken picture is left behind.
 
 **When care can be logged.** Watering, fertilising and removing grass are locked until **one day before they are due**: a tree watered every 5 days can be watered again from day 4, so tapping Water over and over can't log it repeatedly. The buttons show when they open ("Water in 4 d"). The interval is set by whoever plants the tree (and can be changed later in Edit); **admins and super admins can change any tree's schedule, edit or remove any tree, and log care at any time**. Pruning and checking have no schedule, so they are never locked. The server enforces this (a locked request gets a 409 `TOO_SOON` with when it opens), and two taps at the same moment can't both get through. Nothing needs `db:push` for this.
 

@@ -155,8 +155,28 @@ export const drives = pgTable('drives', {
   // Who can see it: ALL (everyone, even signed-out visitors) or TEAM (team members and admins).
   // Admins always see every drive. New drives default to TEAM so nothing is public by accident.
   visibility: varchar('visibility', { length: 10 }).default('TEAM').notNull(),
+  // SCHEDULED until an admin marks it COMPLETED. The summary and pictures are only shown to
+  // people who can see the drive once it is completed (admins see them while preparing).
+  status: varchar('status', { length: 10 }).default('SCHEDULED').notNull(),
+  summary: text('summary'),
+  completedAt: timestamp('completed_at'),
+  completedBy: varchar('completed_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// Pictures an admin adds to a drive
+export const drivePhotos = pgTable(
+  'drive_photos',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    driveId: uuid('drive_id').references(() => drives.id, { onDelete: 'cascade' }).notNull(),
+    url: text('url').notNull(),
+    publicId: varchar('public_id', { length: 255 }),
+    uploadedBy: varchar('uploaded_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('drive_photos_drive_idx').on(t.driveId, t.createdAt)]
+);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -165,3 +185,4 @@ export type NewTree = typeof trees.$inferInsert;
 export type CareLog = typeof careLogs.$inferSelect;
 export type NewCareLog = typeof careLogs.$inferInsert;
 export type Drive = typeof drives.$inferSelect;
+export type DrivePhoto = typeof drivePhotos.$inferSelect;

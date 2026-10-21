@@ -9,6 +9,7 @@ import { ExpandableText } from '../components/ui/expandable-text';
 import { Button, buttonClass } from '../components/ui/button';
 import { Spinner } from '../components/ui/spinner';
 import { MiniMap } from '../components/MiniMap';
+import { DriveRecap } from '../components/DriveRecap';
 import { driveMapsUrl, formatDriveDate } from '../lib/drives';
 
 /**
@@ -130,6 +131,8 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
             )}
 
             <ExpandableText text={drive.description} lines={6} className="text-lg" />
+
+            <DriveRecap drive={drive} />
 
             {spot && <MiniMap center={spot} pin={spot} pinCleanup={drive.type === 'CLEANUP'} liveRoom={`drive_${drive.id}`} className="h-80" />}
 

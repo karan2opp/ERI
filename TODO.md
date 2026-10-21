@@ -37,7 +37,8 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] Report a wrong tree or a bad photo; ban a bad user; an admin activity log (who did what, when)
 
 ### Drives (waiting on your first real drives)
-- [ ] Store results: for a clean-up, kilograms collected, bags filled and before/after photos; for planting, how many trees. Waiting until you've run a real one so we record the right things
+- [x] After a drive an admin writes a summary, adds pictures and marks it completed (see README)
+- [ ] Store structured results: for a clean-up, kilograms collected and bags filled; for planting, how many trees. Waiting until you've run a real one so we record the right things
 - [ ] Impact summary and downloadable report (not needed for now)
 - [ ] Check-in on the day, and linking trees to drives (not needed for now)
 - [ ] Sign-up ("I'm coming"), attendee list and capacity limit

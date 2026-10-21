@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Droplets, HeartHandshake, Scissors, Search, Shovel, Sprout } from 'lucide-react';
+import { Camera, Droplets, HeartHandshake, Scissors, Search, Shovel, Sprout, Trash2 } from 'lucide-react';
 import type { CareLog, Tree } from '../types';
 import { formatAge, formatDateTime, treeAge, useNow } from '../lib/age';
 import { CARE_LABEL, timeAgo, type CareAction } from '../lib/trees';
-import { fetchCareHistory } from '../services/api';
+import { fetchCareHistory, removeCarePhoto, replaceCarePhoto } from '../services/api';
 import { careDue, dueText, everyText, type TaskKind } from '../lib/schedule';
 import { Button } from './ui/button';
+import { Alert } from './ui/alert';
+import { ConfirmDialog } from './ui/confirm-dialog';
+import { CameraCapture } from './CameraCapture';
 import { cn } from '../lib/cn';
 
 export const CARE_ICON: Record<CareAction, React.ReactNode> = {
@@ -123,8 +126,73 @@ export const CareSchedule: React.FC<{ tree: Tree }> = ({ tree }) => {
 const HISTORY_PAGE = 10;
 
 /**
+ * The photo on a care entry. The tree's owner and admins (`editor`) can retake it with the camera or remove it;
+ * the server checks that too.
+ */
+const CarePhoto: React.FC<{ log: CareLog; editor?: { treeId: string; onChanged: () => void } }> = ({ log, editor }) => {
+  const [camera, setCamera] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (action: () => Promise<unknown>, failure: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      editor?.onChanged();
+    } catch (err) {
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || failure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <img src={log.photoUrl} alt="Care update" className="h-32 w-full rounded-xl object-cover" loading="lazy" />
+      {editor && (
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setCamera(true)} disabled={busy}>
+            <Camera aria-hidden="true" /> Retake photo
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setConfirming(true)} disabled={busy}>
+            <Trash2 aria-hidden="true" /> Remove photo
+          </Button>
+        </div>
+      )}
+      {error && <Alert tone="error">{error}</Alert>}
+      {camera && editor && (
+        <CameraCapture
+          label="Retake the care photo"
+          hint="This replaces the photo on this entry"
+          onCapture={(photo) => {
+            setCamera(false);
+            run(() => replaceCarePhoto(editor.treeId, log.id, photo), "Couldn't replace the photo. Try again.");
+          }}
+          onClose={() => setCamera(false)}
+        />
+      )}
+      <ConfirmDialog
+        open={confirming}
+        title="Remove this photo?"
+        description="The photo is deleted. The care entry stays in the history."
+        confirmLabel="Remove photo"
+        busy={busy}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          if (editor) run(() => removeCarePhoto(editor.treeId, log.id), "Couldn't remove the photo. Try again.");
+        }}
+      />
+    </div>
+  );
+};
+
+/**
  * Care entries, newest first: what was done, by whom, when (exact date and time), notes and photo.
  * Shows what's been loaded; "Show older entries" loads the next page from the server.
+ * With `photoEditor` (the tree's owner or an admin) each entry's photo can be retaken or removed.
  */
 export const CareTimeline: React.FC<{
   history: CareLog[];
@@ -132,7 +200,8 @@ export const CareTimeline: React.FC<{
   onLoadMore: () => void;
   loadingMore?: boolean;
   treePhotoUrl?: string;
-}> = ({ history, total, onLoadMore, loadingMore, treePhotoUrl }) => (
+  photoEditor?: { treeId: string; onChanged: () => void };
+}> = ({ history, total, onLoadMore, loadingMore, treePhotoUrl, photoEditor }) => (
   <>
     <ol className="flex flex-col">
       {history.map((log, i) => (
@@ -151,9 +220,8 @@ export const CareTimeline: React.FC<{
               {formatDateTime(new Date(log.performedAt))} · by {log.performer?.name || 'a neighbour'}
             </p>
             {log.notes && <p className="mt-1">{log.notes}</p>}
-            {log.photoUrl && log.photoUrl !== treePhotoUrl && (
-              <img src={log.photoUrl} alt="Care update" className="mt-2 h-32 w-full rounded-xl object-cover" loading="lazy" />
-            )}
+            {/* The planting entry shows the tree's own photo, which is changed by editing the tree */}
+            {log.photoUrl && log.photoUrl !== treePhotoUrl && <CarePhoto log={log} editor={photoEditor} />}
           </div>
         </li>
       ))}

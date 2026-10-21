@@ -8,11 +8,13 @@ export const ConfirmDialog: React.FC<{
   description: string;
   confirmLabel: string;
   busy?: boolean;
+  /** Red for things that destroy something (the default); green for ordinary confirmations */
+  tone?: 'danger' | 'default';
   /** Extra content under the description (e.g. a choice) */
   children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ open, title, description, confirmLabel, busy, children, onConfirm, onCancel }) => {
+}> = ({ open, title, description, confirmLabel, busy, tone = 'danger', children, onConfirm, onCancel }) => {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export const ConfirmDialog: React.FC<{
           <Button ref={cancelRef} variant="secondary" size="lg" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="danger" size="lg" onClick={onConfirm} disabled={busy}>
+          <Button variant={tone} size="lg" onClick={onConfirm} disabled={busy}>
             {confirmLabel}
           </Button>
         </div>

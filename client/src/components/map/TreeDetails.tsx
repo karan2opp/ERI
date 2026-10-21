@@ -326,7 +326,14 @@ export const TreeDetails: React.FC<{
         ) : history.length === 0 ? (
           <p className="text-muted-foreground">{demo ? 'Sample trees have no history.' : 'No care logged yet. Be the first to water it.'}</p>
         ) : (
-          <CareTimeline history={history} total={care.total} onLoadMore={care.loadMore} loadingMore={care.loadingMore} treePhotoUrl={tree.photoUrl} />
+          <CareTimeline
+            history={history}
+            total={care.total}
+            onLoadMore={care.loadMore}
+            loadingMore={care.loadingMore}
+            treePhotoUrl={tree.photoUrl}
+            photoEditor={canManage && !demo ? { treeId: tree.id, onChanged: care.reload } : undefined}
+          />
         )}
       </section>
 

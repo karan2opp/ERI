@@ -305,9 +305,11 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
 
       const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
       photoUrl = upload.url;
-      
+
       if (existingTree.photoPublicId) {
         await CloudinaryService.deleteImage(existingTree.photoPublicId);
+        // The planting entry in the care history shows that same picture: it goes too, so it isn't left broken
+        await db.update(careLogs).set({ photoUrl: null, photoPublicId: null }).where(and(eq(careLogs.treeId, id), eq(careLogs.photoPublicId, existingTree.photoPublicId)));
       }
       photoPublicId = upload.publicId;
     }

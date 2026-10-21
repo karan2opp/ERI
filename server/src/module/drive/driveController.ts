@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { db } from '../../common/db';
-import { drives } from '../../common/db/schema';
-import { and, asc, desc, eq, gte, ilike, like, lt, sql, type SQL } from 'drizzle-orm';
+import { drivePhotos, drives, type Drive } from '../../common/db/schema';
+import { and, asc, desc, eq, gte, ilike, like, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import { isUuid } from '../../common/utils/validation';
-import { DRIVE_TYPES, DRIVE_VISIBILITIES, canSeeTeamDrives } from '../../common/auth/roles';
+import { DRIVE_TYPES, DRIVE_VISIBILITIES, canSeeTeamDrives, isAdminRole } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
+import { CloudinaryService } from '../../common/services/cloudinaryService';
+import { getSettings } from '../../common/services/settingsService';
 import { NOTIFY_AUDIENCES, deliverDriveNotification, resolveRecipients, type NotifyAudience, type Recipients } from '../../common/services/driveNotifier';
 
 const httpUrl = z.string().max(1000).url().refine(u => /^https?:\/\//i.test(u), 'Must be an http(s) URL');
@@ -47,6 +49,22 @@ const audienceProblem = (visibility: string, notify: string) =>
 /** What the admin sees after saving: how many people are being told. */
 const notifying = (notify: NotifyAudience, r: Recipients) => ({ audience: notify, emails: r.emails.length, devices: r.subscriptions.length });
 
+/**
+ * A drive as this person may see it. The summary of a drive that isn't completed yet is a draft
+ * only admins can read.
+ */
+export const present = (drive: Drive, req: Request): Drive =>
+  drive.status === 'COMPLETED' || isAdminRole((req as AuthenticatedRequest).userRole) ? drive : { ...drive, summary: null };
+
+/** Why this person can't open this drive, if they can't: a team-only drive needs a team member or admin. */
+export const accessProblem = (drive: Drive, req: Request): { status: number; error: string } | null => {
+  if (drive.visibility !== 'TEAM') return null;
+  const r = req as AuthenticatedRequest;
+  if (!r.userId) return { status: 401, error: 'Sign in to see this drive' };
+  if (!canSeeTeamDrives(r.userRole)) return { status: 403, error: 'This drive is for team members and admins' };
+  return null;
+};
+
 export const createDrive = async (req: Request, res: Response) => {
   const parsed = createDriveSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -83,6 +101,8 @@ const updateDriveSchema = z
     googleMapsUrl: driveFields.googleMapsUrl,
     type: driveFields.type,
     visibility: driveFields.visibility,
+    // The write-up of how the drive went; empty clears it
+    summary: z.string().trim().max(5000),
   })
   .partial()
   .extend({ notify: z.enum(NOTIFY_AUDIENCES).default('NONE') })
@@ -109,7 +129,16 @@ export const updateDrive = async (req: Request, res: Response) => {
     const problem = audienceProblem(visibility, notify);
     if (problem) return res.status(400).json({ success: false, error: problem });
 
-    const values = { ...changes, googleMapsUrl: changes.googleMapsUrl === '' ? null : changes.googleMapsUrl };
+    // A completed drive keeps its summary: it can be rewritten but not emptied
+    if (changes.summary === '' && before.status === 'COMPLETED') {
+      return res.status(400).json({ success: false, error: 'A completed drive needs a summary. Write a new one instead of clearing it.' });
+    }
+
+    const values = {
+      ...changes,
+      googleMapsUrl: changes.googleMapsUrl === '' ? null : changes.googleMapsUrl,
+      summary: changes.summary === '' ? null : changes.summary,
+    };
     const [updated] = await db.update(drives).set(values).where(eq(drives.id, id)).returning();
 
     const recipients = await resolveRecipients(notify, (req as AuthenticatedRequest).userId);
@@ -135,7 +164,9 @@ export const deleteDrive = async (req: Request, res: Response) => {
     const problem = audienceProblem(drive.visibility, notify);
     if (problem) return res.status(400).json({ success: false, error: problem });
 
-    await db.delete(drives).where(eq(drives.id, id));
+    const pictures = await db.select({ publicId: drivePhotos.publicId }).from(drivePhotos).where(eq(drivePhotos.driveId, id));
+    await db.delete(drives).where(eq(drives.id, id)); // its picture rows go with it
+    void Promise.all(pictures.map((p) => CloudinaryService.deleteImage(p.publicId ?? undefined)));
     const recipients = await resolveRecipients(notify, (req as AuthenticatedRequest).userId);
     res.status(200).json({ success: true, data: { id, removed: true }, notifying: notifying(notify, recipients) });
     void deliverDriveNotification('CANCELLED', drive, recipients);
@@ -186,7 +217,7 @@ export const getDrives = async (req: Request, res: Response) => {
 
     if (req.query.page === undefined) {
       const allDrives = await db.select().from(drives).where(scope).orderBy(desc(drives.createdAt));
-      return res.status(200).json({ success: true, data: allDrives });
+      return res.status(200).json({ success: true, data: allDrives.map((d) => present(d, req)) });
     }
 
     const parsed = listQuery.safeParse(req.query);
@@ -206,8 +237,9 @@ export const getDrives = async (req: Request, res: Response) => {
     const filters: SQL[] = [...base];
     if (search) filters.push(ilike(drives.title, likePattern(search)));
     if (date) filters.push(eq(drives.date, date));
-    if (when === 'upcoming') filters.push(gte(drives.date, today));
-    if (when === 'past') filters.push(lt(drives.date, today));
+    // A completed drive is history, even if its date is today
+    if (when === 'upcoming') filters.push(gte(drives.date, today), ne(drives.status, 'COMPLETED'));
+    if (when === 'past') filters.push(or(lt(drives.date, today), eq(drives.status, 'COMPLETED'))!);
     const where = filters.length ? and(...filters) : undefined;
 
     // Upcoming: soonest first. Past and all: most recent first.
@@ -218,8 +250,8 @@ export const getDrives = async (req: Request, res: Response) => {
       db.select({ total: sql<number>`count(*)` }).from(drives).where(where),
       db
         .select({
-          upcoming: sql<number>`count(*) filter (where ${drives.date} >= ${today})`,
-          past: sql<number>`count(*) filter (where ${drives.date} < ${today})`,
+          upcoming: sql<number>`count(*) filter (where ${drives.date} >= ${today} and ${drives.status} <> 'COMPLETED')`,
+          past: sql<number>`count(*) filter (where ${drives.date} < ${today} or ${drives.status} = 'COMPLETED')`,
         })
         .from(drives)
         .where(baseWhere),
@@ -227,7 +259,7 @@ export const getDrives = async (req: Request, res: Response) => {
 
     res.status(200).json({
       success: true,
-      data: rows,
+      data: rows.map((d) => present(d, req)),
       total: Number(total),
       page,
       limit,
@@ -275,14 +307,9 @@ export const getDriveById = async (req: Request, res: Response) => {
     if (!drive) {
       return res.status(404).json({ success: false, error: 'Drive not found' });
     }
-    if (drive.visibility === 'TEAM') {
-      const r = req as AuthenticatedRequest;
-      if (!r.userId) return res.status(401).json({ success: false, error: 'Sign in to see this drive' });
-      if (!canSeeTeamDrives(r.userRole)) {
-        return res.status(403).json({ success: false, error: 'This drive is for team members and admins' });
-      }
-    }
-    res.status(200).json({ success: true, data: drive });
+    const problem = accessProblem(drive, req);
+    if (problem) return res.status(problem.status).json({ success: false, error: problem.error });
+    res.status(200).json({ success: true, data: present(drive, req) });
   } catch (err) {
     console.error('Error fetching drive by id:', err);
     res.status(500).json({ success: false, error: 'Failed to fetch drive' });

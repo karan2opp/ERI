@@ -15,6 +15,8 @@ import { ExpandableText } from './ui/expandable-text';
 import { Button, buttonClass } from './ui/button';
 import { LiveTracker } from './LiveTracker';
 import { MiniMap } from './MiniMap';
+import { DriveRecap } from './DriveRecap';
+import { DriveWrapUp } from './DriveWrapUp';
 
 /** A labelled detail: small label above, value below, with an icon. */
 const DetailRow: React.FC<{ icon: React.ReactNode; label: string; children: React.ReactNode }> = ({ icon, label, children }) => (
@@ -52,6 +54,7 @@ export const DriveView: React.FC<{
   const spot = drive.latitude != null && drive.longitude != null ? { lat: drive.latitude, lng: drive.longitude } : null;
   const maps = driveMapsUrl(drive);
   const upcoming = isUpcoming(drive);
+  const completed = drive.status === 'COMPLETED';
   const meters = you && spot ? getDistanceInMeters(you.lat, you.lng, spot.lat, spot.lng) : null;
 
   const share = async () => {
@@ -83,7 +86,7 @@ export const DriveView: React.FC<{
       <div className="flex flex-wrap gap-1.5">
         <DriveTypeBadge type={drive.type} />
         {showVisibility && <DriveVisibilityBadge visibility={drive.visibility} />}
-        <Badge variant={upcoming ? 'healthy' : 'outline'}>{upcoming ? 'Upcoming' : 'Past'}</Badge>
+        <Badge variant={upcoming || completed ? 'healthy' : 'outline'}>{completed ? 'Completed' : upcoming ? 'Upcoming' : 'Past'}</Badge>
       </div>
 
       {/* Every detail with its label */}
@@ -134,6 +137,10 @@ export const DriveView: React.FC<{
           <ExternalLink aria-hidden="true" /> Open in Google Maps
         </a>
       )}
+
+      {/* How it went: everyone who can see the drive reads the summary and sees the pictures once it is completed.
+          Admins get the editor instead, with the same pictures. */}
+      {onUpdated ? <DriveWrapUp drive={drive} onUpdated={(d) => onUpdated(d)} /> : <DriveRecap drive={drive} />}
 
       {/* Admins decide what kind of drive it is and who sees it */}
       {onUpdated && (

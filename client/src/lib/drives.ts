@@ -32,7 +32,9 @@ export const driveStartsAt = (drive: Pick<Drive, 'date' | 'time'>): Date | null 
 // A drive still counts as upcoming for a few hours after it starts, while people are on their way or there
 const STILL_ON_FOR_MS = 4 * 60 * 60 * 1000;
 
-export const isUpcoming = (drive: Pick<Drive, 'date' | 'time'>) => {
+export const isUpcoming = (drive: Pick<Drive, 'date' | 'time' | 'status'>) => {
+  // A completed drive is history, whatever its date
+  if (drive.status === 'COMPLETED') return false;
   const at = driveStartsAt(drive);
   return at === null || at.getTime() + STILL_ON_FOR_MS >= Date.now();
 };

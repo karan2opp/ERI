@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarDays, ChevronRight, Lock, Search, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronRight, Lock, Search, X } from 'lucide-react';
 import type { Drive, DriveType, DriveVisibility } from '../types';
 import { fetchDrivesPage, type DrivesPageResult } from '../services/api';
 import { DRIVE_TYPE_LABEL, driveStartsAt, isUpcoming } from '../lib/drives';
@@ -77,7 +77,10 @@ const DriveCard: React.FC<{ drive: Drive; showVisibility: boolean; onOpen: (d: D
             <Lock aria-hidden="true" /> <span className="max-sm:sr-only">Team</span>
           </Badge>
         )}
-        <Badge variant={upcoming ? 'healthy' : 'outline'} className="max-sm:hidden">{upcoming ? 'Upcoming' : 'Past'}</Badge>
+        {drive.status === 'COMPLETED' && <CheckCircle2 className="size-5 shrink-0 text-leaf sm:hidden" role="img" aria-label="Completed" />}
+        <Badge variant={upcoming || drive.status === 'COMPLETED' ? 'healthy' : 'outline'} className="max-sm:hidden">
+          {drive.status === 'COMPLETED' ? 'Completed' : upcoming ? 'Upcoming' : 'Past'}
+        </Badge>
         <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
     </li>

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
 import { trees, careLogs } from '../../common/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { ACTION_NOUN, careOpensAt, isScheduledAction, waitText } from '../../common/utils/careWindow';
 import { isAdminRole } from '../../common/auth/roles';
@@ -178,5 +178,70 @@ export const getTreeCareHistory = async (req: Request, res: Response) => {
       success: false,
       error: 'Failed to fetch care history'
     });
+  }
+};
+
+/**
+ * Who may change the photo of a care entry: the person who planted the tree, or an admin. Answers the
+ * request itself (404 or 403) and returns null when they may not.
+ */
+const loadCareLogForPhotoChange = async (req: AuthenticatedRequest, res: Response) => {
+  const { treeId, logId } = req.params;
+  if (!isUuid(treeId) || !isUuid(logId)) {
+    res.status(404).json({ success: false, error: 'Care entry not found' });
+    return null;
+  }
+  const [tree] = await db.select().from(trees).where(eq(trees.id, treeId));
+  if (!tree) {
+    res.status(404).json({ success: false, error: 'Tree not found' });
+    return null;
+  }
+  if (tree.userId !== req.userId && !isAdminRole(req.userRole)) {
+    res.status(403).json({ success: false, error: 'Forbidden: only the person who planted this tree or an admin can change its photos' });
+    return null;
+  }
+  const [log] = await db.select().from(careLogs).where(and(eq(careLogs.id, logId), eq(careLogs.treeId, treeId)));
+  if (!log) {
+    res.status(404).json({ success: false, error: 'Care entry not found' });
+    return null;
+  }
+  return { tree, log };
+};
+
+/**
+ * The entry that records the planting shares the tree's own photo, so that picture is only let go of
+ * (from Cloudinary) when it isn't the tree's.
+ */
+const releasePhoto = (tree: { photoPublicId: string | null }, publicId: string | null) =>
+  publicId && publicId !== tree.photoPublicId ? CloudinaryService.deleteImage(publicId) : Promise.resolve();
+
+/** PUT /trees/:treeId/care/:logId/photo (multipart "photo"): replaces the photo of a care entry. */
+export const replaceCarePhoto = async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.file) return res.status(400).json({ success: false, error: 'Take a photo to replace it with' });
+  try {
+    const found = await loadCareLogForPhotoChange(req, res);
+    if (!found) return;
+    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/care_updates');
+    const [log] = await db.update(careLogs).set({ photoUrl: upload.url, photoPublicId: upload.publicId }).where(eq(careLogs.id, found.log.id)).returning();
+    await releasePhoto(found.tree, found.log.photoPublicId);
+    return res.status(200).json({ success: true, data: log });
+  } catch (error) {
+    console.error('Error replacing care photo:', error);
+    return res.status(500).json({ success: false, error: 'Failed to replace the photo' });
+  }
+};
+
+/** DELETE /trees/:treeId/care/:logId/photo: removes the photo from a care entry (the entry itself stays). */
+export const removeCarePhoto = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const found = await loadCareLogForPhotoChange(req, res);
+    if (!found) return;
+    if (!found.log.photoUrl) return res.status(404).json({ success: false, error: 'This entry has no photo' });
+    const [log] = await db.update(careLogs).set({ photoUrl: null, photoPublicId: null }).where(eq(careLogs.id, found.log.id)).returning();
+    await releasePhoto(found.tree, found.log.photoPublicId);
+    return res.status(200).json({ success: true, data: log });
+  } catch (error) {
+    console.error('Error removing care photo:', error);
+    return res.status(500).json({ success: false, error: 'Failed to remove the photo' });
   }
 };

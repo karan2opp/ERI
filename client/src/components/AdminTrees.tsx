@@ -112,7 +112,14 @@ export const TreeHistoryPage: React.FC<{ treeId: string; onClose: () => void; on
               {care.items && <span className="ml-2 font-sans text-base font-normal text-muted-foreground">{care.total}</span>}
             </h3>
             {history && history.length > 0 ? (
-              <CareTimeline history={history} total={care.total} onLoadMore={care.loadMore} loadingMore={care.loadingMore} treePhotoUrl={tree.photoUrl} />
+              <CareTimeline
+                history={history}
+                total={care.total}
+                onLoadMore={care.loadMore}
+                loadingMore={care.loadingMore}
+                treePhotoUrl={tree.photoUrl}
+                photoEditor={{ treeId: tree.id, onChanged: care.reload }}
+              />
             ) : (
               <p className="text-muted-foreground">No care logged yet.</p>
             )}

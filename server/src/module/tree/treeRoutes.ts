@@ -11,7 +11,9 @@ import { checkTreePhoto } from './treeController';
 import { getTreePins } from './pinsController';
 import {
   addCareLog,
-  getTreeCareHistory
+  getTreeCareHistory,
+  replaceCarePhoto,
+  removeCarePhoto
 } from '../care/careController';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { photoNeedsCheck } from '../../common/services/settingsService';
@@ -50,5 +52,8 @@ router.post('/', requireAuth, photoChecksLimiter, uploadSingleImage, createTree)
 router.put('/:id', requireAuth, photoChecksLimiter, uploadSingleImage, updateTree);
 router.delete('/:id', requireAuth, deleteTree);
 router.post('/:treeId/care', requireAuth, uploadSingleImage, addCareLog);
+// Changing the photo of a care entry: the tree's owner or an admin (checked in the controller)
+router.put('/:treeId/care/:logId/photo', requireAuth, uploadSingleImage, replaceCarePhoto);
+router.delete('/:treeId/care/:logId/photo', requireAuth, removeCarePhoto);
 
 export default router;

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Tree, CareLog, User, Drive, Role, DriveType, DriveVisibility, TreeCategory } from '../types';
+import type { Tree, CareLog, User, Drive, DrivePhoto, Role, DriveType, DriveVisibility, TreeCategory } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -131,6 +131,19 @@ export const deleteTree = async (id: string): Promise<void> => {
   await api.delete(`/trees/${id}`);
 };
 
+/** The tree's owner or an admin: swaps the photo of a care entry for a new one. */
+export const replaceCarePhoto = async (treeId: string, logId: string, photo: File): Promise<CareLog> => {
+  const form = new FormData();
+  form.append('photo', photo);
+  const res = await api.put(`/trees/${treeId}/care/${logId}/photo`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
+  return res.data.data;
+};
+
+/** The tree's owner or an admin: removes the photo from a care entry (the entry stays). */
+export const removeCarePhoto = async (treeId: string, logId: string): Promise<void> => {
+  await api.delete(`/trees/${treeId}/care/${logId}/photo`);
+};
+
 export const logCareActivity = async (treeId: string, formData: FormData): Promise<CareLog> => {
   const res = await api.post(`/trees/${treeId}/care`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -206,6 +219,8 @@ export const fetchAdminStats = async () => {
 export interface AppSettings {
   verifyUserPhotos: boolean;
   verifyTeamPhotos: boolean;
+  /** How many pictures one drive can have */
+  drivePhotoLimit: number;
 }
 
 export const fetchAppSettings = async (): Promise<AppSettings> => {
@@ -338,7 +353,7 @@ export const createGlobalDrive = async (data: Omit<DriveFields, 'googleMapsUrl'>
 };
 
 /** Admin: change anything about a drive. `notify` tells people about the change. */
-export const updateDrive = async (id: string, changes: Partial<DriveFields> & { notify?: NotifyAudience }): Promise<{ drive: Drive; notifying?: Notifying }> => {
+export const updateDrive = async (id: string, changes: Partial<DriveFields> & { summary?: string; notify?: NotifyAudience }): Promise<{ drive: Drive; notifying?: Notifying }> => {
   const res = await api.patch(`/drives/${id}`, changes);
   return { drive: res.data.data, notifying: res.data.notifying };
 };
@@ -347,6 +362,53 @@ export const updateDrive = async (id: string, changes: Partial<DriveFields> & { 
 export const deleteDrive = async (id: string, notify: NotifyAudience = 'NONE'): Promise<Notifying | undefined> => {
   const res = await api.delete(`/drives/${id}`, { params: { notify } });
   return res.data.notifying;
+};
+
+// ---- Wrapping a drive up: pictures, and marking it completed
+
+export interface DrivePhotosPage {
+  data: DrivePhoto[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+/** One page (10 by default) of a drive's pictures. Visitors only get them once the drive is completed. */
+export const fetchDrivePhotos = async (driveId: string, page: number, limit = 10): Promise<DrivePhotosPage> => {
+  const res = await api.get(`/drives/${driveId}/photos`, { params: { page, limit } });
+  return res.data;
+};
+
+/** Admin: adds one picture (the server refuses past the limit set in Settings). */
+export const addDrivePhoto = async (driveId: string, file: File): Promise<DrivePhoto> => {
+  const form = new FormData();
+  form.append('photo', file);
+  const res = await api.post(`/drives/${driveId}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
+  return res.data.data;
+};
+
+/** Admin: swaps one picture for another, keeping its place. */
+export const replaceDrivePhoto = async (driveId: string, photoId: string, file: File): Promise<DrivePhoto> => {
+  const form = new FormData();
+  form.append('photo', file);
+  const res = await api.put(`/drives/${driveId}/photos/${photoId}`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
+  return res.data.data;
+};
+
+export const removeDrivePhoto = async (driveId: string, photoId: string): Promise<void> => {
+  await api.delete(`/drives/${driveId}/photos/${photoId}`);
+};
+
+/** Admin: marks the drive completed (it needs a summary, sent now or saved before). */
+export const completeDrive = async (driveId: string, summary: string): Promise<Drive> => {
+  const res = await api.post(`/drives/${driveId}/complete`, { summary });
+  return res.data.data;
+};
+
+/** Admin: undoes "completed". */
+export const reopenDrive = async (driveId: string): Promise<Drive> => {
+  const res = await api.post(`/drives/${driveId}/reopen`);
+  return res.data.data;
 };
 
 // ---- Notifications (email and push)

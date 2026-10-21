@@ -6,7 +6,7 @@ import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { isUuid } from '../../common/utils/validation';
 import { z } from 'zod';
 import { ROLES, isAdminRole } from '../../common/auth/roles';
-import { getSettings, updateSettings } from '../../common/services/settingsService';
+import { DRIVE_PHOTO_LIMIT_MAX, DRIVE_PHOTO_LIMIT_MIN, getSettings, updateSettings } from '../../common/services/settingsService';
 import { needsWater } from '../../common/utils/careSchedule';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 
@@ -316,14 +316,21 @@ export const getAppSettings = async (_req: Request, res: Response) => {
   }
 };
 
-/** PATCH /admin/settings  { verifyUserPhotos?, verifyTeamPhotos? }: choose whose tree photos go to the AI check. */
+/** PATCH /admin/settings  { verifyUserPhotos?, verifyTeamPhotos?, drivePhotoLimit? }: whose tree photos are checked, and how many pictures a drive can have. */
 export const setAppSettings = async (req: AuthenticatedRequest, res: Response) => {
   const parsed = z
-    .object({ verifyUserPhotos: z.boolean().optional(), verifyTeamPhotos: z.boolean().optional() })
-    .refine((v) => v.verifyUserPhotos !== undefined || v.verifyTeamPhotos !== undefined, 'Send at least one setting')
+    .object({
+      verifyUserPhotos: z.boolean().optional(),
+      verifyTeamPhotos: z.boolean().optional(),
+      drivePhotoLimit: z.number().int().min(DRIVE_PHOTO_LIMIT_MIN).max(DRIVE_PHOTO_LIMIT_MAX).optional(),
+    })
+    .refine((v) => Object.values(v).some((x) => x !== undefined), 'Send at least one setting')
     .safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ success: false, error: 'verifyUserPhotos and verifyTeamPhotos must be true or false' });
+    return res.status(400).json({
+      success: false,
+      error: `verifyUserPhotos and verifyTeamPhotos must be true or false, and drivePhotoLimit a whole number from ${DRIVE_PHOTO_LIMIT_MIN} to ${DRIVE_PHOTO_LIMIT_MAX}`,
+    });
   }
   try {
     res.status(200).json({ success: true, data: await updateSettings(parsed.data, req.userId!) });
