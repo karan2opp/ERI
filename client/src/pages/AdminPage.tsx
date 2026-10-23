@@ -127,10 +127,16 @@ const UserRow: React.FC<{ user: User & { createdAt: string }; isSelf: boolean; o
   );
 };
 
-const UsersList: React.FC<{ onShowTreeOnMap: (t: Tree) => void }> = ({ onShowTreeOnMap }) => {
+const UsersList: React.FC<{ onShowTreeOnMap: (t: Tree) => void; initialOpenUserId?: string }> = ({ onShowTreeOnMap, initialOpenUserId }) => {
   const list = usePagedList<User & { createdAt: string }>(fetchAdminUsers, USERS_PER_PAGE);
   const { user: me } = useUser();
   const [openUserId, setOpenUserId] = useState<string | null>(null);
+  // Opened from a notification: show that person once Admin itself is on screen (opened in the same moment, the
+  // profile would be drawn underneath the Admin page)
+  useEffect(() => {
+    if (initialOpenUserId) setOpenUserId(initialOpenUserId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className="flex flex-col gap-4">
       <SearchBox value={list.search} onChange={list.setSearch} placeholder="Search users by name, email or phone" />
@@ -173,8 +179,16 @@ export const AdminPage: React.FC<{
   onShowDriveOnMap: (d: Drive) => void;
   onDirectionsToDrive: (d: Drive) => void;
   onShowTreeOnMap: (t: Tree) => void;
-}> = ({ role, you, onClose, onShowDriveOnMap, onDirectionsToDrive, onShowTreeOnMap }) => {
-  const [tab, setTab] = useState<Tab>('overview');
+  /** Opened from a notification: start on this tab, with this person's profile open */
+  initialTab?: 'users' | 'review';
+  initialUserId?: string;
+  /** Called once the starting tab and profile have been used */
+  onStarted?: () => void;
+}> = ({ role, you, onClose, onShowDriveOnMap, onDirectionsToDrive, onShowTreeOnMap, initialTab, initialUserId, onStarted }) => {
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'overview');
+  const [startUserId] = useState(initialUserId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onStarted?.(), []);
   const [drive, setDrive] = useState<Drive | null>(null);
   const [creating, setCreating] = useState(false);
   // What the last schedule or edit told people, shown above the drives
@@ -213,7 +227,7 @@ export const AdminPage: React.FC<{
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
         {tab === 'categories' && <AdminCategories />}
         {tab === 'review' && <AdminReview onReviewed={loadPending} />}
-        {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
+        {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} initialOpenUserId={startUserId} />}
         {tab === 'socials' && <AdminSiteLinks />}
         {tab === 'settings' && <AdminSettings />}
       </Page>

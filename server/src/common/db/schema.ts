@@ -180,6 +180,28 @@ export const drivePhotos = pgTable(
   (t) => [index('drive_photos_drive_idx').on(t.driveId, t.createdAt)]
 );
 
+// The bell in the app: one row per person per notification
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // Who it is for
+    userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // DRIVE_SCHEDULED, USER_JOINED or TREE_PLANTED
+    type: varchar('type', { length: 30 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body'),
+    // Where tapping it goes, inside the site ("/?drive=...", "/map?tree=...")
+    link: varchar('link', { length: 500 }),
+    readAt: timestamp('read_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    index('notifications_user_created_idx').on(t.userId, t.createdAt),
+    index('notifications_user_unread_idx').on(t.userId).where(sql`read_at is null`),
+  ]
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Tree = typeof trees.$inferSelect;
@@ -188,3 +210,4 @@ export type CareLog = typeof careLogs.$inferSelect;
 export type NewCareLog = typeof careLogs.$inferInsert;
 export type Drive = typeof drives.$inferSelect;
 export type DrivePhoto = typeof drivePhotos.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;

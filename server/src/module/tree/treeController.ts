@@ -13,6 +13,7 @@ import { checkPlantingLocation } from '../../common/utils/treePolicy';
 import { findCategory } from '../category/categoryController';
 import { photoNeedsCheck } from '../../common/services/settingsService';
 import { isAdminRole } from '../../common/auth/roles';
+import { notifyAdmins } from '../../common/services/inbox';
 
 /** The AI photo check, unless settings say this person's photos aren't checked (then it counts as a pass). */
 const checkPhoto = async (file: Express.Multer.File, role: string | undefined, userId: string) =>
@@ -230,6 +231,18 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       userId,
       performedAt: justPlanted ? plantedAt : now
     });
+
+    // Tell the admins (in the background): a verified tree opens on the map, one waiting for review opens Review
+    const pending = newTree.verificationStatus === 'PENDING';
+    void notifyAdmins(
+      {
+        type: 'TREE_PLANTED',
+        title: `${req.userName || 'Someone'} planted a new tree`,
+        body: [newTree.name, newTree.species].filter(Boolean).join(' · ') + (pending ? ' · waiting for review' : ''),
+        link: pending ? '/map?open=admin&tab=review' : `/map?tree=${newTree.id}`,
+      },
+      userId
+    );
 
     return res.status(201).json({
       success: true,

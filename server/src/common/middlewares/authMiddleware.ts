@@ -5,6 +5,7 @@ import { users, User } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { canSeeTeamDrives, isAdminRole } from '../auth/roles';
 import { normalizeName, splitName, uniqueName } from '../utils/userName';
+import { notifyAdmins } from '../services/inbox';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -77,6 +78,9 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
       }
 
       if (createdHere) {
+        // Tell the admins someone new has arrived (in the background)
+        void notifyAdmins({ type: 'USER_JOINED', title: `${user.name} joined`, body: user.email, link: `/map?open=admin&user=${encodeURIComponent(user.id)}` }, user.id);
+
         // Show the same name on the Account page as everyone else sees
         if (user.name !== wanted && user.name) {
           clerkClient.users.updateUser(userId, splitName(user.name)).catch((err) => console.warn('Could not update the name in Clerk:', err));

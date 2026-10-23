@@ -17,6 +17,7 @@ import adminRoutes from './module/admin/adminRoutes';
 import driveRoutes from './module/drive/driveRoutes';
 import notificationRoutes from './module/notification/notificationRoutes';
 import categoryRoutes from './module/category/categoryRoutes';
+import { setRealtime, userRoom } from './common/realtime';
 import statsRoutes from './module/stats/statsRoutes';
 import siteRoutes from './module/site/siteRoutes';
 import { ensureDefaultCategories } from './common/services/defaultCategories';
@@ -114,6 +115,8 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+// Services push notifications to people through this
+setRealtime(io);
 
 // Live-location rooms look like plant_<id> or drive_<id>.
 const ROOM_PATTERN = /^(plant|drive)_[A-Za-z0-9-]{1,64}$/;
@@ -170,6 +173,13 @@ async function mayUseRoom(socket: { data: Record<string, any> }, room: string): 
 }
 
 io.on('connection', (socket) => {
+  // Signed in: this socket gets your notifications live
+  if (socket.data.userId) socket.join(userRoom(socket.data.userId));
+  // The app asks whether this connection knows who it is (it reconnects with its sign-in if not)
+  socket.on('inbox:hello', (ack) => {
+    if (typeof ack === 'function') ack(Boolean(socket.data.userId));
+  });
+
   socket.on('join_tracking', async (room) => {
     if (typeof room !== 'string' || !ROOM_PATTERN.test(room)) return;
     if (!(await mayUseRoom(socket, room))) return;

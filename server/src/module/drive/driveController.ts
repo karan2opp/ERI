@@ -9,6 +9,7 @@ import type { AuthenticatedRequest } from '../../common/middlewares/authMiddlewa
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { getSettings } from '../../common/services/settingsService';
 import { NOTIFY_AUDIENCES, deliverDriveNotification, resolveRecipients, type NotifyAudience, type Recipients } from '../../common/services/driveNotifier';
+import { notifyDriveScheduled } from '../../common/services/inbox';
 
 const httpUrl = z.string().max(1000).url().refine(u => /^https?:\/\//i.test(u), 'Must be an http(s) URL');
 
@@ -83,6 +84,8 @@ export const createDrive = async (req: Request, res: Response) => {
     res.status(201).json({ success: true, data: newDrive, notifying: notifying(notify, recipients) });
     // After answering: a big audience takes a while
     void deliverDriveNotification('CREATED', newDrive, recipients);
+    // And in the bell of the same people
+    void notifyDriveScheduled(newDrive, notify, (req as AuthenticatedRequest).userId);
   } catch (err) {
     console.error('Error creating drive:', err);
     if (!res.headersSent) res.status(500).json({ success: false, error: 'Failed to create drive' });

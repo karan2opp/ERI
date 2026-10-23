@@ -38,6 +38,7 @@ import { DrivesPage } from './pages/DrivesPage';
 import { SharedDrivePage } from './pages/SharedDrivePage';
 import { HomePage } from './pages/HomePage';
 import { DonatePage } from './pages/DonatePage';
+import { NotificationBell } from './components/NotificationBell';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
 type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
@@ -385,6 +386,20 @@ function MapApp() {
     setFlyTo({ lat: tree.latitude, lng: tree.longitude, timestamp: Date.now() });
   }, []);
 
+  // /map?tree=<id> (a "new tree planted" notification): open that tree on the map
+  useEffect(() => {
+    const treeId = new URLSearchParams(window.location.search).get('tree');
+    if (!treeId || !/^[0-9a-f-]{36}$/i.test(treeId)) return;
+    fetchTreeById(treeId).then(selectTree, () => {});
+  }, [selectTree]);
+
+  // /map?open=admin&user=<id> or &tab=review (admin notifications): which part of Admin to open first.
+  // Used once, so opening Admin again later starts as usual.
+  const [adminStart, setAdminStart] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return { userId: q.get('user') ?? undefined, tab: q.get('tab') === 'review' ? ('review' as const) : undefined };
+  });
+
   // A pin tapped on the map: open it now, and load its full details
   const selectPin = useCallback((pin: TreePin) => {
     setSelection({ kind: 'tree', id: pin.id });
@@ -644,6 +659,9 @@ function MapApp() {
                   <span className="min-[400px]:hidden">Plant</span>
                 </Button>
                 <div className="pointer-events-auto">
+                  <NotificationBell />
+                </div>
+                <div className="pointer-events-auto">
                   <ProfileDrawer
                     role={role}
                     treesPlanted={myTreeSummary?.total ?? 0}
@@ -776,6 +794,9 @@ function MapApp() {
         <AdminPage
           role={role}
           you={you}
+          initialTab={adminStart.userId ? 'users' : adminStart.tab}
+          initialUserId={adminStart.userId}
+          onStarted={() => setAdminStart({ userId: undefined, tab: undefined })}
           onClose={back}
           onShowDriveOnMap={(d) => {
             back();

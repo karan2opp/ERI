@@ -486,6 +486,50 @@ export const confirmPasswordReset = async (code: string, newPassword: string) =>
   await api.post('/users/me/password-reset/confirm', { code, newPassword });
 };
 
+// ---- The bell (in-app notifications)
+
+export type InboxType = 'DRIVE_SCHEDULED' | 'USER_JOINED' | 'TREE_PLANTED';
+
+/** One notification in your bell. `link` is where tapping it goes, inside the site. */
+export interface InboxItem {
+  id: string;
+  type: InboxType;
+  title: string;
+  body: string | null;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface InboxPage {
+  data: InboxItem[];
+  total: number;
+  unread: number;
+  page: number;
+  totalPages: number;
+}
+
+/** Your notifications, newest first, 10 a page. */
+export const fetchInbox = async (page: number): Promise<InboxPage> => {
+  const res = await api.get('/notifications/inbox', { params: { page, limit: 10 } });
+  return res.data;
+};
+
+export const fetchUnreadCount = async (): Promise<number> => {
+  const res = await api.get('/notifications/inbox/unread-count');
+  return res.data.data.unread;
+};
+
+/** Marks one as read; answers with how many are still unread. */
+export const markNotificationRead = async (id: string): Promise<number> => {
+  const res = await api.post(`/notifications/inbox/${id}/read`);
+  return res.data.unread;
+};
+
+export const markAllNotificationsRead = async (): Promise<void> => {
+  await api.post('/notifications/inbox/read-all');
+};
+
 export const subscribePush = async (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) => {
   await api.post('/notifications/push/subscribe', subscription);
 };
