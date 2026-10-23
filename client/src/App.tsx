@@ -39,7 +39,6 @@ import { SharedDrivePage } from './pages/SharedDrivePage';
 import { HomePage } from './pages/HomePage';
 import { DonatePage } from './pages/DonatePage';
 import { AboutPage } from './pages/AboutPage';
-import { NotificationBell } from './components/NotificationBell';
 import { PlacesPage } from './pages/PlacesPage';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
@@ -671,9 +670,6 @@ function MapApp() {
                   <span className="max-[399px]:hidden">Plant a tree</span>
                   <span className="min-[400px]:hidden">Plant</span>
                 </Button>
-                <div className="pointer-events-auto">
-                  <NotificationBell />
-                </div>
                 <div className="pointer-events-auto">
                   <ProfileDrawer
                     role={role}

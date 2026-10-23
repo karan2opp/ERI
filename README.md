@@ -95,9 +95,9 @@ The home page has four number boxes: **trees planted**, **plantation drives**, *
 
 **Donate page, footer and contact details.** `/donate` explains what donations pay for and has a **Donate on WhatsApp** button that opens a chat with the team (with a message ready to send). The footer of the home and Donate pages has Instagram, YouTube, a contact email and phone. Admins fill these in under **Admin → Socials**. Until each one is set, the footer shows it greyed out as "coming soon" and the Donate button stays switched off. Links must start with `https://`, and phone numbers are tidied to `+91…` form. They are public through `GET /api/v1/site` and stored in `app_settings`, so nothing needs a migration.
 
-## 🔔 The bell (in-app notifications)
+## 🔔 Notifications (in the app)
 
-Signed-in people have a bell on the map and in the home page header, with how many notifications they haven't read and the list (10 at a time from the server). New ones arrive live over the app's socket connection, the bell swings and a soft chime plays (made in the browser; it can be switched off per device in the list, and browsers only allow sound after the first tap on the page). Tapping one marks it read and opens it.
+Notifications live in the **profile menu** (on the map and in the website header), not in a separate bell button, so the top bar fits small phones. The profile button shows how many are unread, and the menu has a **Notifications** row with the count; tapping it shows the list inside the menu (10 at a time from the server, with a back arrow, **Mark all as read** and a sound switch). New ones arrive live over the app's socket connection: the count goes up, it gives a small shake and a soft chime plays (made in the browser; it can be switched off per device, and browsers only allow sound after the first tap on the page). Tapping one marks it read and opens it. The code is in `components/Notifications.tsx` (`useInbox` and `NotificationList`), used by `ProfileDrawer`.
 
 | What | Who gets it | Tapping it opens |
 |---|---|---|
@@ -119,7 +119,7 @@ Everyone finds the forms under **Suggest a place** (in the profile menu, and a c
 - **Answers** to the form's questions (each one required).
 - **Up to 5 pictures** (optional). The app makes big photos smaller before sending (at most 1600 px, JPEG), so 5 photos on mobile data stay quick; the server checks each is a real JPG, PNG or WEBP and stores it in Cloudinary (`plantree/places`).
 
-Only admins see what was sent: the pictures (tap to enlarge), the landmark, planting or clean-up, the answers next to the questions as they were asked (editing a form later doesn't change old answers), who sent it (name, email, phone), a small map with the pin and an **Open in Google Maps** link. Admins can remove a place (its pictures go too). Every new place rings the admins' bell.
+Only admins see what was sent: the pictures (tap to enlarge), the landmark, planting or clean-up, the answers next to the questions as they were asked (editing a form later doesn't change old answers), who sent it (name, email, phone), a small map with the pin and an **Open in Google Maps** link. Admins can remove a place (its pictures go too). Every new place goes into the admins' notifications.
 
 Routes (`/api/v1/place-forms`): `GET /` and `GET /:id` (anyone; admins also get `suggestionCount`), `POST /`, `PATCH /:id`, `DELETE /:id` (admins), `POST /:id/suggestions` (signed in, multipart: `kind`, `latitude`, `longitude`, `googleMapsUrl`, `landmark`, `answers` as a JSON list, up to 5 files in `photos`; 20 an hour per person), `GET /:id/suggestions?page=` and `DELETE /:id/suggestions/:suggestionId` (admins). Needs the new `place_forms` and `place_suggestions` tables (`npm run db:push`).
 

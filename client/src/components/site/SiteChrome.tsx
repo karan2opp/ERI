@@ -8,7 +8,6 @@ import { formatPhone } from '../../lib/phone';
 import { cn } from '../../lib/cn';
 import { Logo } from '../ui/logo';
 import { ProfileDrawer } from '../ProfileDrawer';
-import { NotificationBell } from '../NotificationBell';
 
 // The public pages (home and Donate) share this header, footer and button style.
 
@@ -128,7 +127,6 @@ export const SiteHeader: React.FC<{ overPhoto?: React.RefObject<HTMLElement | nu
           <a href={MAP} className={siteButton('primary', 'sm')}>
             <MapPin aria-hidden="true" /> Open the map
           </a>
-          <NotificationBell compact />
           <ProfileDrawer compact role={role} onMyTrees={inApp('myTrees')} onDrives={inApp('drives')} onAccount={inApp('account')} onAdmin={inApp('admin')} onPlaces={inApp('places')} />
         </div>
       </div>
