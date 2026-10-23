@@ -83,6 +83,8 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
 | Address | What |
 |---|---|
 | `/` | The public home page: hero photo, how it works, upcoming public drives and how to join in |
+| `/about` | About us: who we are (with the team photo), what we do, a scrolling strip of drive photos, the impact numbers, what we believe and how to join in |
+| `/donate` | What donations pay for, with a Donate on WhatsApp button |
 | `/map` | The tree map and the app (`/map?open=drives` opens on the Drives page) |
 | `/?drive=<id>` | A drive's own page (the link people share) |
 

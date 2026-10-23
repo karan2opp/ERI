@@ -38,6 +38,7 @@ import { DrivesPage } from './pages/DrivesPage';
 import { SharedDrivePage } from './pages/SharedDrivePage';
 import { HomePage } from './pages/HomePage';
 import { DonatePage } from './pages/DonatePage';
+import { AboutPage } from './pages/AboutPage';
 import { NotificationBell } from './components/NotificationBell';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
@@ -63,10 +64,11 @@ export default function App() {
   // The page-load intro (components/IntroAnimation.tsx) is switched off for now.
   // To bring it back, import it here and render <IntroAnimation /> after the page.
   if (sharedDriveId) return <SharedDrivePage driveId={sharedDriveId} />;
-  // The home page is only the bare address and the Donate page /donate; every other path (/map, and sign-in return addresses) is the app
+  // The home page is only the bare address, the Donate page /donate and About /about; every other path (/map, and sign-in return addresses) is the app
   const path = window.location.pathname.replace(/\/+$/, '');
   if (path === '') return <HomePage />;
   if (path === '/donate') return <DonatePage />;
+  if (path === '/about') return <AboutPage />;
   return <MapApp />;
 }
 

@@ -15,13 +15,19 @@ import { NotificationBell } from '../NotificationBell';
 export const MAP = '/map';
 export const DRIVES = '/map?open=drives';
 export const DONATE = '/donate';
+export const ABOUT = '/about';
 
 /** The public pages' buttons: slightly rounded rectangles, not pills. */
-export const siteButton = (kind: 'primary' | 'secondary', size: 'sm' | 'md' | 'lg', className?: string) =>
+export const siteButton = (kind: 'primary' | 'secondary' | 'light', size: 'sm' | 'md' | 'lg', className?: string) =>
   cn(
     'inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-colors select-none [&_svg]:shrink-0',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-    kind === 'primary' ? 'bg-primary text-primary-foreground hover:bg-primary/85' : 'bg-secondary text-secondary-foreground hover:bg-accent',
+    // light: white with a green outline, for pale-green panels where the secondary colour would disappear
+    kind === 'primary'
+      ? 'bg-primary text-primary-foreground hover:bg-primary/85'
+      : kind === 'light'
+        ? 'bg-card text-primary ring-1 ring-primary/40 hover:bg-accent'
+        : 'bg-secondary text-secondary-foreground hover:bg-accent',
     size === 'sm' ? 'h-9 px-3 text-sm [&_svg]:size-4' : size === 'md' ? 'h-11 px-3 text-[15px] [&_svg]:size-[18px]' : 'h-12 px-6 text-base [&_svg]:size-5',
     className
   );
@@ -110,7 +116,8 @@ export const SiteHeader: React.FC<{ overPhoto?: React.RefObject<HTMLElement | nu
         <a href="/" aria-label="Earth Revival Initiative home" className="rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
           <Logo hideNameOnNarrow lightOverPhoto />
         </a>
-        <nav className="hidden items-center gap-7 font-medium md:flex group-data-[top=true]/header:text-white" aria-label="Site">
+        <nav className="hidden items-center gap-6 font-medium lg:flex group-data-[top=true]/header:text-white" aria-label="Site">
+          <a href={ABOUT} className={link}>About</a>
           <a href="/#how" className={link}>How it works</a>
           <a href="/#drives" className={link}>Drives</a>
           <a href="/#join" className={link}>Get involved</a>
@@ -178,6 +185,7 @@ export const SiteFooter: React.FC = () => {
 
         <nav className="flex flex-col gap-2 font-medium" aria-label="Footer">
           <h2 className="font-sans text-sm font-semibold text-muted-foreground">Explore</h2>
+          <a href={ABOUT} className="hover:text-primary">About us</a>
           <a href={MAP} className="hover:text-primary">Tree map</a>
           <a href={DRIVES} className="hover:text-primary">Drives</a>
           <a href="/#how" className="hover:text-primary">How it works</a>

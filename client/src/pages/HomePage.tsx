@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ExternalLink, Recycle, Sprout, Trash2, Trees } from 'lucide-react';
+import { ArrowRight, ExternalLink, Sprout, Trash2 } from 'lucide-react';
 import type { Drive } from '../types';
-import { fetchDrivesPage, fetchSiteStats, type SiteStats } from '../services/api';
+import { fetchDrivesPage } from '../services/api';
 import { driveStartsAt } from '../lib/drives';
 import { formatClock } from '../lib/time';
 import { cn } from '../lib/cn';
 import { Sapling } from '../components/ui/logo';
 import { DONATE, DRIVES, MAP, SiteFooter, SiteHeader, siteButton, useSiteInfo } from '../components/site/SiteChrome';
+import { ImpactNumbers } from '../components/site/ImpactNumbers';
 
 const HERO_LEAD = 'A community tree-care network. Plant a tree, put it on the shared map, and keep it alive with help from your neighbours.';
 
@@ -14,14 +15,12 @@ const Eyebrow: React.FC<{ children: React.ReactNode; className?: string }> = ({ 
   <p className={cn('text-sm font-semibold tracking-wide text-leaf', className)}>{children}</p>
 );
 
-/** The four impact numbers (counted by the server) and the next few public drives. */
+/** The next few public drives. */
 function useNumbers() {
-  const [stats, setStats] = useState<SiteStats | null>(null);
   const [upcoming, setUpcoming] = useState<Drive[] | null>(null);
   const [driveError, setDriveError] = useState(false);
 
   useEffect(() => {
-    fetchSiteStats().then(setStats, () => {});
     // Signed out, so only drives marked for everyone: this is a public page
     fetchDrivesPage({ page: 1, limit: 3, when: 'upcoming' }).then(
       (r) => setUpcoming(r.data),
@@ -29,95 +28,8 @@ function useNumbers() {
     );
   }, []);
 
-  return { stats, upcoming, driveError };
+  return { upcoming, driveError };
 }
-
-type Tone = 'leaf' | 'bark' | 'cleanup';
-
-// Colour keeps its meaning from the map: leaf green for trees, brown for plantation, purple for clean-up
-const TONE: Record<Tone, string> = {
-  leaf: 'bg-leaf/12 text-leaf',
-  bark: 'bg-bark/12 text-bark',
-  cleanup: 'bg-cleanup/12 text-cleanup',
-};
-
-const IMPACT: { key: keyof SiteStats; label: string; note: string; icon: React.ReactNode; tone: Tone; unit?: string }[] = [
-  { key: 'treesPlanted', label: 'Trees planted', note: 'Verified trees on the shared map', icon: <Trees />, tone: 'leaf' },
-  { key: 'plantationDrives', label: 'Plantation drives', note: 'Volunteer days when new trees went in', icon: <Sprout />, tone: 'bark' },
-  { key: 'cleanupDrives', label: 'Clean-up drives', note: 'Volunteer days clearing litter from our streets', icon: <Trash2 />, tone: 'cleanup' },
-  { key: 'wasteCollectedKg', label: 'Waste collected', note: 'Litter taken off our streets and green spaces', icon: <Recycle />, tone: 'cleanup', unit: 'kg' },
-];
-
-/**
- * PLACEHOLDER NUMBERS. While this is true the four boxes show the sample numbers below, not real counts,
- * so they must be switched off before the site is shown to the public. Set it to false to show what the
- * server counts (waste collected comes from Admin > Settings).
- */
-const SHOW_SAMPLE_NUMBERS = true;
-const SAMPLE_NUMBERS: SiteStats = { treesPlanted: 1250, plantationDrives: 18, cleanupDrives: 12, wasteCollectedKg: 3400 };
-
-/**
- * Counts up from 0 to `target` over about two seconds, easing out, once `start` is true (when the box is on screen).
- * Shows the final number at once if the person prefers less motion.
- */
-function useCountUp(target: number | null, start: boolean, duration = 2000): number | null {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    if (target === null || !start) return;
-    if (target === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setValue(target);
-      return;
-    }
-    let frame = 0;
-    const begun = performance.now();
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - begun) / duration);
-      setValue(Math.round(target * (1 - Math.pow(1 - progress, 3))));
-      if (progress < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [target, start, duration]);
-  return target === null ? null : value;
-}
-
-/** One of the four boxes: a coloured icon, the big number (it counts up), what it counts and a line about it. */
-const ImpactBox: React.FC<{ item: (typeof IMPACT)[number]; target: number | null }> = ({ item, target }) => {
-  // Starts counting when the box scrolls into view, so it is seen counting even though it is below the picture
-  const box = useRef<HTMLLIElement>(null);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const el = box.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return setSeen(true);
-    const watcher = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setSeen(true);
-          watcher.disconnect();
-        }
-      },
-      { threshold: 0.5 }
-    );
-    watcher.observe(el);
-    return () => watcher.disconnect();
-  }, []);
-  const value = useCountUp(target, seen);
-  return (
-  <li ref={box} className="flex flex-col gap-3 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-border md:p-5">
-    <span className={cn('grid size-10 place-items-center rounded-lg [&>svg]:size-5', TONE[item.tone].split(' ')[0], TONE[item.tone].split(' ')[1])} aria-hidden="true">
-      {item.icon}
-    </span>
-    <p className={cn('font-heading text-3xl font-extrabold tabular-nums md:text-4xl', TONE[item.tone].split(' ')[1])}>
-      {value === null ? '–' : value.toLocaleString('en-IN')}
-      {item.unit && value !== null && <span className="ml-1 text-lg font-bold">{item.unit}</span>}
-    </p>
-    <div>
-      <h3 className="font-sans text-base font-semibold">{item.label}</h3>
-      <p className="mt-1 text-sm text-muted-foreground">{item.note}</p>
-    </div>
-  </li>
-  );
-};
 
 /** One step of "How it works": a picture across the top, then the title and a few words. */
 const Step: React.FC<{ image: string; title: string; children: React.ReactNode }> = ({ image, title, children }) => (
@@ -187,10 +99,9 @@ const InvolveCard: React.FC<{ href: string; title: string; label: string; extern
  * from the public API; the map itself lives at /map. Phone first: one column that grows into rows from md up.
  */
 export const HomePage: React.FC = () => {
-  const { stats, upcoming, driveError } = useNumbers();
+  const { upcoming, driveError } = useNumbers();
   // The admin-set Google Form for joining the team; no button until it is set
   const joinTeamUrl = useSiteInfo()?.joinTeamFormUrl ?? '';
-  const numbers = SHOW_SAMPLE_NUMBERS ? SAMPLE_NUMBERS : stats;
   const heroRef = useRef<HTMLElement>(null);
 
   // The in-page links glide down; undone when leaving so the map app is unaffected
@@ -260,11 +171,7 @@ export const HomePage: React.FC = () => {
 
         {/* Impact numbers, on the page just below the picture (they count up when it loads) */}
         <section aria-label="Our impact" className="mx-auto w-full max-w-6xl px-4 pt-10 md:pt-14">
-          <ul className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-            {IMPACT.map((item) => (
-              <ImpactBox key={item.key} item={item} target={numbers ? numbers[item.key] : null} />
-            ))}
-          </ul>
+          <ImpactNumbers />
         </section>
 
         <section id="how" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-14 md:py-24">

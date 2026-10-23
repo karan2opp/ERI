@@ -452,3 +452,9 @@
   60% { transform: rotate(8deg); }
   80% { transform: rotate(-4deg); }
 }
+
+/* About page photo strip: slides left by one of its two identical copies, then starts again */
+@keyframes pt-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}

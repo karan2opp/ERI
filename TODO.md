@@ -61,7 +61,7 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] Error tracking (for example Sentry) and uptime monitoring
 
 ### Before the site goes public
-- [ ] **Turn off the placeholder numbers on the home page.** The four impact boxes currently show made-up sample numbers (1,250 trees, 18 plantation drives, 12 clean-up drives, 3,400 kg). In `client/src/pages/HomePage.tsx` set `SHOW_SAMPLE_NUMBERS` to `false` so they show the real counts, and enter the real waste total in Admin → Settings
+- [ ] **Turn off the placeholder numbers on the home and About pages.** The four impact boxes currently show made-up sample numbers (1,250 trees, 18 plantation drives, 12 clean-up drives, 3,400 kg). In `client/src/components/site/ImpactNumbers.tsx` set `SHOW_SAMPLE_NUMBERS` to `false` so they show the real counts, and enter the real waste total in Admin → Settings
 
 ### Quality
 - [ ] Automated tests and CI: the checks I run by hand (roles, drive visibility, photo check, notifications) should become real test files that run on every push
