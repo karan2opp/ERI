@@ -4,7 +4,7 @@ import { notifications, users, type Drive, type Notification } from '../db/schem
 import { emitToUser } from '../realtime';
 import type { NotifyAudience } from './driveNotifier';
 
-export type InboxType = 'DRIVE_SCHEDULED' | 'USER_JOINED' | 'TREE_PLANTED';
+export type InboxType = 'DRIVE_SCHEDULED' | 'USER_JOINED' | 'TREE_PLANTED' | 'PLACE_SUGGESTED';
 
 interface NewNotice {
   type: InboxType;

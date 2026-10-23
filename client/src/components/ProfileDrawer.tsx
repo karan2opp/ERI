@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
-import { CalendarDays, ChevronRight, House, LogOut, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
+import { CalendarDays, ChevronRight, House, LogOut, MapPinPlus, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
@@ -44,11 +44,13 @@ export const ProfileDrawer: React.FC<{
   onDrives: () => void;
   onAccount: () => void;
   onAdmin: () => void;
+  /** Suggest a place to plant trees or clean up */
+  onPlaces: () => void;
   /** Back to the home page (left out on the home page itself) */
   onHome?: () => void;
   /** A smaller, squarer button (the home page's header); the map keeps the big round one */
   compact?: boolean;
-}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onHome, compact = false }) => {
+}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onPlaces, onHome, compact = false }) => {
   const isAdmin = isAdminRole(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
@@ -143,6 +145,7 @@ export const ProfileDrawer: React.FC<{
                   {onHome && <NavRow icon={<House />} label="Home" hint="About us, how it works and upcoming drives" onClick={go(onHome)} />}
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
+                  <NavRow icon={<MapPinPlus />} label="Suggest a place" hint="Tell us where to plant trees or clean up" onClick={go(onPlaces)} />
                   <NavRow icon={<UserRound />} label="Account" hint="Your details and notifications" onClick={go(onAccount)} />
                   {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
                 </nav>
@@ -159,6 +162,7 @@ export const ProfileDrawer: React.FC<{
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Drives">
                   {onHome && <NavRow icon={<House />} label="Home" hint="About us, how it works and upcoming drives" onClick={go(onHome)} />}
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
+                  <NavRow icon={<MapPinPlus />} label="Suggest a place" hint="Tell us where to plant trees or clean up" onClick={go(onPlaces)} />
                 </nav>
               </>
             )}

@@ -85,7 +85,8 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
 | `/` | The public home page: hero photo, how it works, upcoming public drives and how to join in |
 | `/about` | About us: who we are (with the team photo), what we do, a scrolling strip of drive photos, the impact numbers, what we believe and how to join in |
 | `/donate` | What donations pay for, with a Donate on WhatsApp button |
-| `/map` | The tree map and the app (`/map?open=drives` opens on the Drives page) |
+| `/map` | The tree map and the app (`/map?open=drives` opens on the Drives page, `/map?open=places` on Suggest a place) |
+| `/map?open=places&form=<id>` | One place form (the link admins share) |
 | `/?drive=<id>` | A drive's own page (the link people share) |
 
 The home page has four number boxes: **trees planted**, **plantation drives**, **clean-up drives** and **waste collected**. The server counts the first three (`GET /api/v1/stats`, public: verified trees, and drives that have passed or been marked completed, by type); **waste collected** is a number admins keep up to date in **Admin → Settings → Waste collected** (kilograms), since nothing else records it. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Account and Admin, which open inside the app at `/map?open=…`). On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
@@ -103,8 +104,24 @@ Signed-in people have a bell on the map and in the home page header, with how ma
 | A drive is scheduled | The people the admin chose to tell (team, or everyone; nobody for "Don't send"), not the admin who scheduled it | The drive's page |
 | Someone new signs up ("Karan joined") | Admins and super admins | That person's profile in Admin |
 | A tree is planted ("Karan planted a new tree") | Admins and super admins, not the planter | The tree on the map, or Admin → Review if it is waiting for review |
+| A place is suggested ("Karan suggested a place for planting") | Admins and super admins, not the sender | That form in Admin → Places, with the places sent |
 
 Routes: `GET /api/v1/notifications/inbox?page=`, `GET …/inbox/unread-count`, `POST …/inbox/:id/read`, `POST …/inbox/read-all` (your own only). Each signed-in socket joins the room `user:<id>`. Needs the new `notifications` table (`npm run db:push`).
+
+## 📍 Suggest a place
+
+Admins put up **place forms** asking people where we could plant trees or hold a clean-up drive (**Admin → Places → Create a form**). A form has a title, an optional description, what the places are for (**planting trees**, **clean-up drives** or **either**, when each person chooses) and up to **2 extra questions** of the admin's own. A form is **open** (taking places) or **closed** (still visible, but nobody can send places); admins open and close it with one button, edit it, copy a link to share (`/map?open=places&form=<id>`) or delete it with everything sent through it.
+
+Everyone finds the forms under **Suggest a place** (in the profile menu, and a card in the home page's Get involved), open ones first, 10 to a page. Sending a place needs sign-in and asks for:
+
+- **Where:** a pin on our map (search an area, then move the map under the pin; it starts where you are when the app knows) and/or a **Google Maps link** (only Google Maps addresses are taken). With only a link, the server reads the coordinates from it when the link has them (full links do, short `maps.app.goo.gl` links don't), so the admin still gets a pin.
+- **A landmark** people know (required).
+- **Answers** to the form's questions (each one required).
+- **Up to 5 pictures** (optional). The app makes big photos smaller before sending (at most 1600 px, JPEG), so 5 photos on mobile data stay quick; the server checks each is a real JPG, PNG or WEBP and stores it in Cloudinary (`plantree/places`).
+
+Only admins see what was sent: the pictures (tap to enlarge), the landmark, planting or clean-up, the answers next to the questions as they were asked (editing a form later doesn't change old answers), who sent it (name, email, phone), a small map with the pin and an **Open in Google Maps** link. Admins can remove a place (its pictures go too). Every new place rings the admins' bell.
+
+Routes (`/api/v1/place-forms`): `GET /` and `GET /:id` (anyone; admins also get `suggestionCount`), `POST /`, `PATCH /:id`, `DELETE /:id` (admins), `POST /:id/suggestions` (signed in, multipart: `kind`, `latitude`, `longitude`, `googleMapsUrl`, `landmark`, `answers` as a JSON list, up to 5 files in `photos`; 20 an hour per person), `GET /:id/suggestions?page=` and `DELETE /:id/suggestions/:suggestionId` (admins). Needs the new `place_forms` and `place_suggestions` tables (`npm run db:push`).
 
 ## 🔐 Authentication & Admins
 

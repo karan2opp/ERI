@@ -23,6 +23,7 @@ import siteRoutes from './module/site/siteRoutes';
 import { ensureDefaultCategories } from './common/services/defaultCategories';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
+import placeRoutes from './module/place/placeRoutes';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10) || 5000;
@@ -73,6 +74,7 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/site', siteRoutes);
+app.use('/api/v1/place-forms', placeRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);

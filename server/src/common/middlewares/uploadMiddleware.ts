@@ -3,7 +3,7 @@ import multer from 'multer';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-const upload = multer({
+const images = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
     if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
@@ -15,7 +15,8 @@ const upload = multer({
   limits: {
     fileSize: 10 * 1024 * 1024
   }
-}).single('photo');
+});
+const upload = images.single('photo');
 
 // The mimetype is client-supplied, so also check the file's actual leading bytes.
 const hasImageSignature = (buf: Buffer): boolean => {
@@ -32,6 +33,26 @@ export const uploadSingleImage = (req: Request, res: Response, next: NextFunctio
       return res.status(400).json({ success: false, error: message });
     }
     if (req.file && !hasImageSignature(req.file.buffer)) {
+      return res.status(400).json({ success: false, error: 'File content is not a valid JPG, PNG or WEBP image' });
+    }
+    next();
+  });
+};
+
+/** The most pictures one place suggestion can carry. */
+export const MAX_PLACE_PHOTOS = 5;
+const uploadPlacePhotos = images.array('photos', MAX_PLACE_PHOTOS);
+
+/** Up to 5 pictures in the multipart field "photos" (req.files); each one is checked like a single photo. */
+export const uploadPhotos = (req: Request, res: Response, next: NextFunction) => {
+  uploadPlacePhotos(req, res, (err?: unknown) => {
+    if (err) {
+      const tooMany = err instanceof multer.MulterError && err.code === 'LIMIT_UNEXPECTED_FILE';
+      const message = tooMany ? `Add up to ${MAX_PLACE_PHOTOS} pictures` : err instanceof Error ? err.message : 'Upload failed';
+      return res.status(400).json({ success: false, error: message });
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.some((f) => !hasImageSignature(f.buffer))) {
       return res.status(400).json({ success: false, error: 'File content is not a valid JPG, PNG or WEBP image' });
     }
     next();

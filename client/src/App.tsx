@@ -40,9 +40,10 @@ import { HomePage } from './pages/HomePage';
 import { DonatePage } from './pages/DonatePage';
 import { AboutPage } from './pages/AboutPage';
 import { NotificationBell } from './components/NotificationBell';
+import { PlacesPage } from './pages/PlacesPage';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
-type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
+type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives' | 'places';
 type Selection = { kind: 'tree' | 'drive'; id: string } | null;
 type Destination = { name: string; at: LatLng };
 
@@ -77,10 +78,10 @@ export default function App() {
  * closes them instead of leaving the app.
  */
 function useScreens() {
-  // /map?open=drives (and myTrees, account, admin: the home page's links) opens on that page, with the map behind it for the back button
+  // /map?open=drives (and myTrees, account, admin, places: the home page's links) opens on that page, with the map behind it for the back button
   const [first] = useState<Screen>(() => {
     const asked = new URLSearchParams(window.location.search).get('open');
-    return asked === 'drives' || asked === 'myTrees' || asked === 'account' || asked === 'admin' ? asked : 'map';
+    return asked === 'drives' || asked === 'myTrees' || asked === 'account' || asked === 'admin' || asked === 'places' ? asked : 'map';
   });
   const [screen, setScreen] = useState<Screen>(first);
   useEffect(() => {
@@ -395,11 +396,21 @@ function MapApp() {
     fetchTreeById(treeId).then(selectTree, () => {});
   }, [selectTree]);
 
-  // /map?open=admin&user=<id> or &tab=review (admin notifications): which part of Admin to open first.
+  // /map?open=admin&user=<id>, &tab=review or &tab=places&form=<id> (admin notifications): which part of Admin to open first.
   // Used once, so opening Admin again later starts as usual.
   const [adminStart, setAdminStart] = useState(() => {
     const q = new URLSearchParams(window.location.search);
-    return { userId: q.get('user') ?? undefined, tab: q.get('tab') === 'review' ? ('review' as const) : undefined };
+    const tab = q.get('tab');
+    return {
+      userId: q.get('user') ?? undefined,
+      tab: tab === 'review' || tab === 'places' ? (tab as 'review' | 'places') : undefined,
+      formId: tab === 'places' ? (q.get('form') ?? undefined) : undefined,
+    };
+  });
+  // /map?open=places&form=<id> (a shared form link): that form opens straight away, once
+  const [placesStartForm, setPlacesStartForm] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return q.get('open') === 'places' ? (q.get('form') ?? undefined) : undefined;
   });
 
   // A pin tapped on the map: open it now, and load its full details
@@ -672,6 +683,7 @@ function MapApp() {
                     onDrives={() => open('drives')}
                     onAccount={() => open('account')}
                     onAdmin={() => open('admin')}
+                    onPlaces={() => open('places')}
                     onHome={() => window.location.assign('/')}
                   />
                 </div>
@@ -792,13 +804,25 @@ function MapApp() {
         />
       )}
 
+      {screen === 'places' && (
+        <PlacesPage
+          you={you}
+          initialFormId={placesStartForm}
+          onClose={() => {
+            setPlacesStartForm(undefined);
+            back();
+          }}
+        />
+      )}
+
       {screen === 'admin' && isAdminRole(role) && (
         <AdminPage
           role={role}
           you={you}
           initialTab={adminStart.userId ? 'users' : adminStart.tab}
           initialUserId={adminStart.userId}
-          onStarted={() => setAdminStart({ userId: undefined, tab: undefined })}
+          initialFormId={adminStart.formId}
+          onStarted={() => setAdminStart({ userId: undefined, tab: undefined, formId: undefined })}
           onClose={back}
           onShowDriveOnMap={(d) => {
             back();

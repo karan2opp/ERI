@@ -488,7 +488,7 @@ export const confirmPasswordReset = async (code: string, newPassword: string) =>
 
 // ---- The bell (in-app notifications)
 
-export type InboxType = 'DRIVE_SCHEDULED' | 'USER_JOINED' | 'TREE_PLANTED';
+export type InboxType = 'DRIVE_SCHEDULED' | 'USER_JOINED' | 'TREE_PLANTED' | 'PLACE_SUGGESTED';
 
 /** One notification in your bell. `link` is where tapping it goes, inside the site. */
 export interface InboxItem {
@@ -597,4 +597,103 @@ export const fetchDrivesPage = async (params: {
 export const fetchDriveCalendar = async (month: string): Promise<{ date: string; count: number }[]> => {
   const res = await api.get('/drives/calendar', { params: { month } });
   return res.data.data;
+};
+
+// ---- Place forms (people suggest where to plant trees or clean up)
+
+/** What a form's places are for; EITHER lets each person choose. */
+export type PlaceFormKind = 'PLANTATION' | 'CLEANUP' | 'EITHER';
+export type PlaceKind = Exclude<PlaceFormKind, 'EITHER'>;
+
+export interface PlaceForm {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: PlaceFormKind;
+  status: 'OPEN' | 'CLOSED';
+  /** Up to two extra questions; every one has to be answered */
+  questions: string[];
+  createdAt: string;
+  updatedAt: string;
+  /** Admins only: how many places came in */
+  suggestionCount?: number;
+}
+
+export interface PlaceFormFields {
+  title: string;
+  description: string;
+  kind: PlaceFormKind;
+  questions: string[];
+  status: 'OPEN' | 'CLOSED';
+}
+
+/** One place someone sent (admins only). */
+export interface PlaceSuggestion {
+  id: string;
+  kind: PlaceKind;
+  latitude: number | null;
+  longitude: number | null;
+  googleMapsUrl: string | null;
+  landmark: string;
+  answers: { question: string; answer: string }[];
+  photos: string[];
+  createdAt: string;
+  userId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+  userPhone: string | null;
+  userAvatarUrl: string | null;
+}
+
+/** The forms, open ones first, a page at a time. */
+export const fetchPlaceForms = async (page: number, limit = 10, status: 'ALL' | 'OPEN' | 'CLOSED' = 'ALL'): Promise<Paged<PlaceForm>> => {
+  const res = await api.get('/place-forms', { params: { page, limit, status } });
+  return res.data;
+};
+
+export const fetchPlaceForm = async (id: string): Promise<PlaceForm> => {
+  const res = await api.get(`/place-forms/${id}`);
+  return res.data.data;
+};
+
+export const createPlaceForm = async (fields: PlaceFormFields): Promise<PlaceForm> => {
+  const res = await api.post('/place-forms', fields);
+  return res.data.data;
+};
+
+export const updatePlaceForm = async (id: string, changes: Partial<PlaceFormFields>): Promise<PlaceForm> => {
+  const res = await api.patch(`/place-forms/${id}`, changes);
+  return res.data.data;
+};
+
+export const deletePlaceForm = async (id: string): Promise<void> => {
+  await api.delete(`/place-forms/${id}`);
+};
+
+/** Sends a place: the pin and/or a Google Maps link, a landmark, the answers and up to 5 pictures. */
+export const sendPlaceSuggestion = async (
+  formId: string,
+  place: { kind?: PlaceKind; pin: LatLngLike | null; googleMapsUrl: string; landmark: string; answers: string[]; photos: File[] }
+): Promise<void> => {
+  const body = new FormData();
+  if (place.kind) body.append('kind', place.kind);
+  if (place.pin) {
+    body.append('latitude', String(place.pin.lat));
+    body.append('longitude', String(place.pin.lng));
+  }
+  if (place.googleMapsUrl) body.append('googleMapsUrl', place.googleMapsUrl);
+  body.append('landmark', place.landmark);
+  body.append('answers', JSON.stringify(place.answers));
+  for (const photo of place.photos) body.append('photos', photo);
+  await api.post(`/place-forms/${formId}/suggestions`, body);
+};
+type LatLngLike = { lat: number; lng: number };
+
+export const fetchPlaceSuggestions = async (formId: string, page: number, limit = 10): Promise<Paged<PlaceSuggestion>> => {
+  const res = await api.get(`/place-forms/${formId}/suggestions`, { params: { page, limit } });
+  return res.data;
+};
+
+export const deletePlaceSuggestion = async (formId: string, suggestionId: string): Promise<void> => {
+  await api.delete(`/place-forms/${formId}/suggestions/${suggestionId}`);
 };

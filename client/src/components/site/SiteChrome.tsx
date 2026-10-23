@@ -15,6 +15,7 @@ import { NotificationBell } from '../NotificationBell';
 export const MAP = '/map';
 export const DRIVES = '/map?open=drives';
 export const DONATE = '/donate';
+export const PLACES = '/map?open=places';
 export const ABOUT = '/about';
 
 /** The public pages' buttons: slightly rounded rectangles, not pills. */
@@ -128,7 +129,7 @@ export const SiteHeader: React.FC<{ overPhoto?: React.RefObject<HTMLElement | nu
             <MapPin aria-hidden="true" /> Open the map
           </a>
           <NotificationBell compact />
-          <ProfileDrawer compact role={role} onMyTrees={inApp('myTrees')} onDrives={inApp('drives')} onAccount={inApp('account')} onAdmin={inApp('admin')} />
+          <ProfileDrawer compact role={role} onMyTrees={inApp('myTrees')} onDrives={inApp('drives')} onAccount={inApp('account')} onAdmin={inApp('admin')} onPlaces={inApp('places')} />
         </div>
       </div>
     </header>

@@ -1,4 +1,4 @@
-import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 // Users Table (Synced with Clerk Auth)
@@ -187,7 +187,7 @@ export const notifications = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     // Who it is for
     userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
-    // DRIVE_SCHEDULED, USER_JOINED or TREE_PLANTED
+    // DRIVE_SCHEDULED, USER_JOINED, TREE_PLANTED or PLACE_SUGGESTED
     type: varchar('type', { length: 30 }).notNull(),
     title: varchar('title', { length: 255 }).notNull(),
     body: text('body'),
@@ -202,6 +202,49 @@ export const notifications = pgTable(
   ]
 );
 
+// A form an admin puts up asking people where we could plant trees or hold a clean-up drive
+export const placeForms = pgTable(
+  'place_forms',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    // What the places are for: PLANTATION, CLEANUP or EITHER (then each person says which)
+    kind: varchar('kind', { length: 20 }).default('PLANTATION').notNull(),
+    // OPEN takes suggestions, CLOSED doesn't (it stays visible)
+    status: varchar('status', { length: 10 }).default('OPEN').notNull(),
+    // Up to two extra questions the admin asks; every one has to be answered
+    questions: jsonb('questions').$type<string[]>().default([]).notNull(),
+    createdBy: varchar('created_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => [index('place_forms_status_created_idx').on(t.status, t.createdAt)]
+);
+
+// One place someone sent through a form
+export const placeSuggestions = pgTable(
+  'place_suggestions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    formId: uuid('form_id').notNull().references(() => placeForms.id, { onDelete: 'cascade' }),
+    userId: varchar('user_id', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
+    // PLANTATION or CLEANUP
+    kind: varchar('kind', { length: 20 }).notNull(),
+    // The pin on our map; empty when only a Google Maps link without coordinates was given
+    latitude: doublePrecision('latitude'),
+    longitude: doublePrecision('longitude'),
+    googleMapsUrl: varchar('google_maps_url', { length: 1000 }),
+    landmark: varchar('landmark', { length: 255 }).notNull(),
+    // Each question as it was asked, with the answer (so editing the form later doesn't change old answers)
+    answers: jsonb('answers').$type<{ question: string; answer: string }[]>().default([]).notNull(),
+    // Up to 5 pictures of the place
+    photos: jsonb('photos').$type<{ url: string; publicId: string }[]>().default([]).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('place_suggestions_form_created_idx').on(t.formId, t.createdAt)]
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Tree = typeof trees.$inferSelect;
@@ -211,3 +254,5 @@ export type NewCareLog = typeof careLogs.$inferInsert;
 export type Drive = typeof drives.$inferSelect;
 export type DrivePhoto = typeof drivePhotos.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type PlaceForm = typeof placeForms.$inferSelect;
+export type PlaceSuggestion = typeof placeSuggestions.$inferSelect;

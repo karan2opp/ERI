@@ -6,7 +6,7 @@ import { driveStartsAt } from '../lib/drives';
 import { formatClock } from '../lib/time';
 import { cn } from '../lib/cn';
 import { Sapling } from '../components/ui/logo';
-import { DONATE, DRIVES, MAP, SiteFooter, SiteHeader, siteButton, useSiteInfo } from '../components/site/SiteChrome';
+import { DONATE, DRIVES, MAP, PLACES, SiteFooter, SiteHeader, siteButton, useSiteInfo } from '../components/site/SiteChrome';
 import { ImpactNumbers } from '../components/site/ImpactNumbers';
 
 const HERO_LEAD = 'A community tree-care network. Plant a tree, put it on the shared map, and keep it alive with help from your neighbours.';
@@ -246,7 +246,7 @@ export const HomePage: React.FC = () => {
         <section id="join" className="mx-auto w-full max-w-6xl scroll-mt-24 px-4 py-14 md:py-24">
           <Eyebrow>Get involved</Eyebrow>
           <h2 className="mt-2 max-w-2xl text-3xl md:text-4xl">There's a way to help whatever your week looks like</h2>
-          <ul className={cn('mt-8 grid gap-4 sm:grid-cols-2', joinTeamUrl ? 'lg:grid-cols-3' : 'lg:grid-cols-4')}>
+          <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <InvolveCard href={MAP} title="Plant a tree" label="Open the map">
               Planted one already, or want to? Add it to the map so the whole neighbourhood can look after it.
             </InvolveCard>
@@ -255,6 +255,9 @@ export const HomePage: React.FC = () => {
             </InvolveCard>
             <InvolveCard href={DRIVES} title="Come to a drive" label="See the drives">
               Meet other volunteers, plant together and clean up the places our trees grow in.
+            </InvolveCard>
+            <InvolveCard href={PLACES} title="Suggest a place" label="Suggest a place">
+              Know a spot that needs trees, or a place that needs cleaning up? Pin it on the map with a few pictures.
             </InvolveCard>
             {joinTeamUrl && (
               <InvolveCard href={joinTeamUrl} external title="Join the team" label="Fill in the form">

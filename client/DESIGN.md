@@ -67,6 +67,12 @@ Shares the header (an **About** link first; the header's page links show from `l
 
 Shares the home page's header (solid, with a **Donate** link) and footer (`src/components/site/SiteChrome.tsx`). A short intro with `plant-it.webp`, **Where your donation goes** (four cards: saplings and guards, water and care, tools for drives, the tree map), **How to give** in three steps, and a note that every drive gets a public summary and pictures. **Donate on WhatsApp** opens `https://wa.me/<number>?text=…` in a new tab; with no number set it is shown switched off with "Donations on WhatsApp will open soon".
 
+## Suggest a place (`/map?open=places`)
+
+A full-screen page like Drives. The list shows each form as a card with an **Open** (green) or **Closed** (outlined) badge and what it is for (brown for planting, purple for clean-up, plain for either), open forms first, 10 to a page, with an empty state when there are none. A form's page has its badges, title and description, then the form: the planting / clean-up chips (only for "either" forms), the same search box and pin-in-the-middle map as the drive form, an optional Google Maps link, the landmark, one text box per question and a picture grid (3 across on phones, 5 from `sm`) with a dashed **Add pictures** tile and a remove button on each picture. The send button names what is still missing ("Add a landmark") until the form is complete; signed-out visitors get **Sign in to send this place** instead. After sending, a thank-you with **Send another place**. A closed form shows a note instead of the form.
+
+Admin → **Places** lists the forms (All / Open / Closed chips, 10 to a page, with how many places came in). A form opens on its own page: badges, title, its questions, then **Close the form / Open the form**, **Edit**, **Copy link** and **Delete** (tinted red, with a confirmation that suggests closing instead), and the places sent, newest first, 10 to a page. Each place is a card: planting or clean-up badge, the landmark, when it came, the pictures in a row of five (tap one for a full-screen view), **Show on the map** (a small map with the pin, opened only when asked so a page of places stays light) and **Open in Google Maps**, the answers under their questions, and who sent it at the bottom.
+
 ## Map screen
 
 ```

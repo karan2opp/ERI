@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '@clerk/react';
-import { Bell, CalendarDays, Sprout, UserPlus, Volume2, VolumeX, X } from 'lucide-react';
+import { Bell, CalendarDays, MapPinPlus, Sprout, UserPlus, Volume2, VolumeX, X } from 'lucide-react';
 import { fetchInbox, fetchUnreadCount, markAllNotificationsRead, markNotificationRead, type InboxItem } from '../services/api';
 import { getSocket, reconnectSocket } from '../utils/socket';
 import { chimeEnabled, playChime, setChimeEnabled, unlockChimeOnFirstTap } from '../lib/chime';
@@ -14,6 +14,7 @@ const ICON: Record<InboxItem['type'], { icon: React.ReactNode; tone: string }> =
   DRIVE_SCHEDULED: { icon: <CalendarDays />, tone: 'bg-bark/12 text-bark' },
   USER_JOINED: { icon: <UserPlus />, tone: 'bg-secondary text-primary' },
   TREE_PLANTED: { icon: <Sprout />, tone: 'bg-leaf/12 text-leaf' },
+  PLACE_SUGGESTED: { icon: <MapPinPlus />, tone: 'bg-water/12 text-water' },
 };
 
 /**
