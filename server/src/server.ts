@@ -17,6 +17,8 @@ import adminRoutes from './module/admin/adminRoutes';
 import driveRoutes from './module/drive/driveRoutes';
 import notificationRoutes from './module/notification/notificationRoutes';
 import categoryRoutes from './module/category/categoryRoutes';
+import statsRoutes from './module/stats/statsRoutes';
+import siteRoutes from './module/site/siteRoutes';
 import { ensureDefaultCategories } from './common/services/defaultCategories';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
@@ -68,6 +70,8 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/drives', driveRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/stats', statsRoutes);
+app.use('/api/v1/site', siteRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);

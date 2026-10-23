@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { fetchAppSettings, updateAppSettings, type AppSettings } from '../services/api';
 import { SwitchRow } from './ui/switch';
-import { Button } from './ui/button';
+import { Button, buttonClass } from './ui/button';
 import { Field, Input } from './ui/field';
 import { Alert } from './ui/alert';
 import { Spinner } from './ui/spinner';
 
 const LIMIT_MIN = 1;
 const LIMIT_MAX = 50;
+const WASTE_MAX = 100_000_000;
 
 /**
  * Admin > Settings (admins and super admins only): whose tree photos go to the AI photo check, and how many
@@ -21,11 +22,17 @@ export const AdminSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [limitText, setLimitText] = useState('');
   const [limitSaved, setLimitSaved] = useState(false);
+  const [wasteText, setWasteText] = useState('');
+  const [wasteSaved, setWasteSaved] = useState(false);
+  const [joinText, setJoinText] = useState('');
+  const [joinSaved, setJoinSaved] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAppSettings().then((s) => {
       setSettings(s);
       setLimitText(String(s.drivePhotoLimit));
+      setWasteText(String(s.wasteCollectedKg));
+      setJoinText(s.joinTeamFormUrl);
     }, () => setFailed(true));
   }, []);
 
@@ -60,6 +67,45 @@ export const AdminSettings: React.FC = () => {
       setLimitSaved(true);
     } catch (err) {
       setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save the limit. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const waste = Number(wasteText);
+  const wasteValid = wasteText.trim() !== '' && Number.isInteger(waste) && waste >= 0 && waste <= WASTE_MAX;
+
+  const saveWaste = async () => {
+    if (!wasteValid) return;
+    setBusy('wasteCollectedKg');
+    setError(null);
+    setWasteSaved(false);
+    try {
+      const next = await updateAppSettings({ wasteCollectedKg: waste });
+      setSettings(next);
+      setWasteText(String(next.wasteCollectedKg));
+      setWasteSaved(true);
+    } catch (err) {
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save the number. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const joinTrimmed = joinText.trim();
+  const joinValid = joinTrimmed === '' || /^https:\/\/[^\s.]+\.[^\s]+$/i.test(joinTrimmed);
+
+  const saveJoin = async (value: string) => {
+    setBusy('joinTeamFormUrl');
+    setError(null);
+    setJoinSaved(null);
+    try {
+      const next = await updateAppSettings({ joinTeamFormUrl: value });
+      setSettings(next);
+      setJoinText(next.joinTeamFormUrl);
+      setJoinSaved(next.joinTeamFormUrl ? 'Saved. The home page now has a Join the team button that opens this form.' : 'Removed. The home page no longer shows a Join the team button.');
+    } catch (err) {
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save the link. Try again.");
     } finally {
       setBusy(null);
     }
@@ -129,6 +175,74 @@ export const AdminSettings: React.FC = () => {
         </Field>
         {!limitValid && <p className="text-sm text-destructive">Enter a whole number from {LIMIT_MIN} to {LIMIT_MAX}.</p>}
         {limitSaved && <Alert tone="success">Saved. Drives can have up to {settings.drivePhotoLimit} {settings.drivePhotoLimit === 1 ? 'picture' : 'pictures'}.</Alert>}
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="settings-waste">
+        <h2 id="settings-waste" className="text-xl">Waste collected</h2>
+        <p className="text-muted-foreground">
+          The total weight of waste collected in all clean-up drives, in kilograms. It is shown on the home page. The other three numbers there (trees, plantation drives and clean-up drives) are counted for you.
+        </p>
+        <Field label="Waste collected (kg)" htmlFor="waste-collected" description="Update it after each clean-up. A whole number, 0 or more.">
+          <div className="flex gap-2">
+            <Input
+              id="waste-collected"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={wasteText}
+              onChange={(e) => {
+                setWasteText(e.target.value);
+                setWasteSaved(false);
+              }}
+              aria-invalid={!wasteValid}
+              className="max-w-48"
+            />
+            <Button size="xl" onClick={saveWaste} disabled={!wasteValid || waste === settings.wasteCollectedKg || busy === 'wasteCollectedKg'}>
+              Save
+            </Button>
+          </div>
+        </Field>
+        {!wasteValid && <p className="text-sm text-destructive">Enter a whole number of kilograms, 0 or more.</p>}
+        {wasteSaved && <Alert tone="success">Saved. The home page now shows {settings.wasteCollectedKg.toLocaleString('en-IN')} kg.</Alert>}
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="settings-join">
+        <h2 id="settings-join" className="text-xl">Join the team form</h2>
+        <p className="text-muted-foreground">
+          The link to your Google Form for people who want to join the team. While a link is set, the home page shows a <strong>Join the team</strong> button that opens it in a new tab. Leave it empty to hide the button.
+        </p>
+        <Field label="Form link" htmlFor="join-form" description="Copy it from the form's Send button in Google Forms. It starts with https://">
+          <Input
+            id="join-form"
+            type="url"
+            inputMode="url"
+            placeholder="https://forms.gle/..."
+            value={joinText}
+            onChange={(e) => {
+              setJoinText(e.target.value);
+              setJoinSaved(null);
+            }}
+            aria-invalid={!joinValid}
+          />
+        </Field>
+        {!joinValid && <p className="text-sm text-destructive">Paste the full link, starting with https://</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => saveJoin(joinTrimmed)} disabled={!joinValid || joinTrimmed === settings.joinTeamFormUrl || busy === 'joinTeamFormUrl'}>
+            Save link
+          </Button>
+          {settings.joinTeamFormUrl && (
+            <>
+              <a href={settings.joinTeamFormUrl} target="_blank" rel="noopener noreferrer" className={buttonClass('secondary', 'default')}>
+                Open the form
+              </a>
+              <Button variant="destructive" onClick={() => saveJoin('')} disabled={busy === 'joinTeamFormUrl'}>
+                Remove link
+              </Button>
+            </>
+          )}
+        </div>
+        {joinSaved && <Alert tone="success">{joinSaved}</Alert>}
       </section>
 
       {error && <Alert tone="error">{error}</Alert>}

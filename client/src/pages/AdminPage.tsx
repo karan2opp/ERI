@@ -6,6 +6,7 @@ import { DriveForm, notifyMessage } from '../components/DriveForm';
 import { AdminReview } from '../components/AdminReview';
 import { AdminCategories } from '../components/AdminCategories';
 import { AdminSettings } from '../components/AdminSettings';
+import { AdminSiteLinks } from '../components/AdminSiteLinks';
 import { ViewerRoleContext } from '../lib/viewerRole';
 import { useUser } from '@clerk/react';
 import { formatPhone } from '../lib/phone';
@@ -23,7 +24,7 @@ import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
-type Tab = 'overview' | 'drives' | 'trees' | 'categories' | 'review' | 'users' | 'settings';
+type Tab = 'overview' | 'drives' | 'trees' | 'categories' | 'review' | 'users' | 'socials' | 'settings';
 
 const TABS = [
   { value: 'overview' as const, label: 'Overview' },
@@ -32,6 +33,7 @@ const TABS = [
   { value: 'categories' as const, label: 'Categories' },
   { value: 'review' as const, label: 'Review' },
   { value: 'users' as const, label: 'Users' },
+  { value: 'socials' as const, label: 'Socials' },
   { value: 'settings' as const, label: 'Settings' },
 ];
 
@@ -212,6 +214,7 @@ export const AdminPage: React.FC<{
         {tab === 'categories' && <AdminCategories />}
         {tab === 'review' && <AdminReview onReviewed={loadPending} />}
         {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} />}
+        {tab === 'socials' && <AdminSiteLinks />}
         {tab === 'settings' && <AdminSettings />}
       </Page>
 

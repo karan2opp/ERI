@@ -5,8 +5,9 @@ import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'd
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { isUuid } from '../../common/utils/validation';
 import { z } from 'zod';
+import { normalizePhone } from '../../common/utils/phone';
 import { ROLES, isAdminRole } from '../../common/auth/roles';
-import { DRIVE_PHOTO_LIMIT_MAX, DRIVE_PHOTO_LIMIT_MIN, getSettings, updateSettings } from '../../common/services/settingsService';
+import { DRIVE_PHOTO_LIMIT_MAX, DRIVE_PHOTO_LIMIT_MIN, WASTE_COLLECTED_MAX, getSettings, updateSettings } from '../../common/services/settingsService';
 import { needsWater } from '../../common/utils/careSchedule';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 
@@ -316,21 +317,50 @@ export const getAppSettings = async (_req: Request, res: Response) => {
   }
 };
 
-/** PATCH /admin/settings  { verifyUserPhotos?, verifyTeamPhotos?, drivePhotoLimit? }: whose tree photos are checked, and how many pictures a drive can have. */
+/** An https:// link, or empty. */
+const httpsOrEmpty = (message: string) =>
+  z.union([z.literal(''), z.string().trim().max(1000).refine((u) => /^https:\/\/[^\s.]+\.\S+$/i.test(u), { message })]);
+
+/** A phone number with its country code (tidied to "+919876543210"), or empty. */
+const phoneOrEmpty = (message: string) =>
+  z
+    .string()
+    .trim()
+    .max(40)
+    .transform((v, ctx) => {
+      if (!v) return '';
+      const phone = normalizePhone(v);
+      if (!phone) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+        return z.NEVER;
+      }
+      return phone;
+    });
+
+/** PATCH /admin/settings  { verifyUserPhotos?, verifyTeamPhotos?, drivePhotoLimit?, wasteCollectedKg?, joinTeamFormUrl? }: whose tree photos are checked, how many pictures a drive can have, the waste total and the "Join the team" form link on the home page. */
 export const setAppSettings = async (req: AuthenticatedRequest, res: Response) => {
   const parsed = z
     .object({
       verifyUserPhotos: z.boolean().optional(),
       verifyTeamPhotos: z.boolean().optional(),
       drivePhotoLimit: z.number().int().min(DRIVE_PHOTO_LIMIT_MIN).max(DRIVE_PHOTO_LIMIT_MAX).optional(),
+      wasteCollectedKg: z.number().int().min(0).max(WASTE_COLLECTED_MAX).optional(),
+      // A secure web address (the Google Form), or empty to take the button away
+      joinTeamFormUrl: httpsOrEmpty('The join form link must start with https://').optional(),
+      // Footer and Donate page details: each can be emptied again
+      instagramUrl: httpsOrEmpty('The Instagram link must start with https://').optional(),
+      youtubeUrl: httpsOrEmpty('The YouTube link must start with https://').optional(),
+      contactEmail: z.union([z.literal(''), z.string().trim().max(200).email('That contact email does not look right')]).optional(),
+      contactPhone: phoneOrEmpty('That contact phone number does not look right. Include the country code, like +91 98765 43210.').optional(),
+      donateWhatsapp: phoneOrEmpty('That WhatsApp number does not look right. Include the country code, like +91 98765 43210.').optional(),
     })
     .refine((v) => Object.values(v).some((x) => x !== undefined), 'Send at least one setting')
     .safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({
-      success: false,
-      error: `verifyUserPhotos and verifyTeamPhotos must be true or false, and drivePhotoLimit a whole number from ${DRIVE_PHOTO_LIMIT_MIN} to ${DRIVE_PHOTO_LIMIT_MAX}`,
-    });
+    // The first problem, in words the admin can act on
+    const issue = parsed.error.issues[0];
+    const friendly = issue && issue.code === 'custom' ? issue.message : issue ? `${issue.path.join('.') || 'settings'}: ${issue.message}` : 'Send at least one setting';
+    return res.status(400).json({ success: false, error: friendly });
   }
   try {
     res.status(200).json({ success: true, data: await updateSettings(parsed.data, req.userId!) });

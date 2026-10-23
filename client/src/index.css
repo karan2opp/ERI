@@ -118,6 +118,20 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Slim, quiet scrollbars (Chrome, Edge, Firefox); the -webkit rules below are for Safari */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 28%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--foreground) 28%, transparent);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
   html {
     @apply font-sans antialiased;

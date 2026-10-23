@@ -168,6 +168,37 @@ export interface Paged<T> {
 }
 
 /** One page of a tree's care history, newest first. */
+/** Public details for the site (each is "" until an admin sets it in Settings). */
+export interface SiteInfo {
+  /** The Google Form for joining the team */
+  joinTeamFormUrl: string;
+  instagramUrl: string;
+  youtubeUrl: string;
+  contactEmail: string;
+  /** International form, like "+919876543210" */
+  contactPhone: string;
+  /** The WhatsApp number donations go through, like "+919876543210" */
+  donateWhatsapp: string;
+}
+
+export const fetchSiteInfo = async (): Promise<SiteInfo> => {
+  const res = await api.get('/site');
+  return res.data.data;
+};
+
+/** The four numbers on the public home page. */
+export interface SiteStats {
+  treesPlanted: number;
+  plantationDrives: number;
+  cleanupDrives: number;
+  wasteCollectedKg: number;
+}
+
+export const fetchSiteStats = async (): Promise<SiteStats> => {
+  const res = await api.get('/stats', { params: { today: new Date().toLocaleDateString('en-CA') } });
+  return res.data.data;
+};
+
 export const fetchCareHistory = async (treeId: string, page = 1, limit = 10): Promise<Paged<CareLog>> => {
   const res = await api.get(`/trees/${treeId}/care`, { params: { page, limit } });
   return res.data;
@@ -230,6 +261,16 @@ export interface AppSettings {
   verifyTeamPhotos: boolean;
   /** How many pictures one drive can have */
   drivePhotoLimit: number;
+  /** Kilograms of waste collected in all clean-ups (shown on the home page) */
+  wasteCollectedKg: number;
+  /** The Google Form for joining the team ("" means no button on the home page) */
+  joinTeamFormUrl: string;
+  /** Footer and Donate page details ("" until set) */
+  instagramUrl: string;
+  youtubeUrl: string;
+  contactEmail: string;
+  contactPhone: string;
+  donateWhatsapp: string;
 }
 
 export const fetchAppSettings = async (): Promise<AppSettings> => {

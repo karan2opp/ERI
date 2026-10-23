@@ -96,7 +96,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
             <Sapling />
             <h1 className="text-3xl">This drive is for the team</h1>
             <p className="max-w-xs text-muted-foreground">This drive can only be seen by team members and admins. If you should have access, ask an admin to add you to the team.</p>
-            <a href="/" className={buttonClass('default', 'xl')}>Open the map</a>
+            <a href="/map" className={buttonClass('default', 'xl')}>Open the map</a>
           </div>
         )}
 
@@ -105,7 +105,7 @@ export const SharedDrivePage: React.FC<{ driveId: string }> = ({ driveId }) => {
             <Sapling />
             <h1 className="text-3xl">This drive isn't here</h1>
             <p className="max-w-xs text-muted-foreground">The link may be wrong, or the drive was removed. Ask whoever shared it for a new link.</p>
-            <a href="/" className={buttonClass('default', 'xl')}>Open the map</a>
+            <a href="/map" className={buttonClass('default', 'xl')}>Open the map</a>
           </div>
         )}
 

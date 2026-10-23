@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
-import { CalendarDays, ChevronRight, LogOut, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
+import { CalendarDays, ChevronRight, House, LogOut, Moon, Shield, Sun, Trees, UserRound, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
@@ -37,13 +37,18 @@ const NavRow: React.FC<{ icon: React.ReactNode; label: string; hint?: string; on
  */
 export const ProfileDrawer: React.FC<{
   role: Role;
-  treesPlanted: number;
-  upcomingDrives: number;
+  /** Left out (as on the home page) hides the two number boxes */
+  treesPlanted?: number;
+  upcomingDrives?: number;
   onMyTrees: () => void;
   onDrives: () => void;
   onAccount: () => void;
   onAdmin: () => void;
-}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin }) => {
+  /** Back to the home page (left out on the home page itself) */
+  onHome?: () => void;
+  /** A smaller, squarer button (the home page's header); the map keeps the big round one */
+  compact?: boolean;
+}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onHome, compact = false }) => {
   const isAdmin = isAdminRole(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
@@ -79,9 +84,12 @@ export const ProfileDrawer: React.FC<{
         aria-label={isSignedIn ? 'Your profile' : 'Profile and sign in'}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="grid size-12 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-card md:size-14 text-foreground shadow-float hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={cn(
+          'grid shrink-0 cursor-pointer place-items-center overflow-hidden bg-card text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          compact ? 'size-9 rounded-lg ring-1 ring-border' : 'size-12 rounded-full shadow-float md:size-14'
+        )}
       >
-        {isSignedIn && user?.imageUrl ? <img src={user.imageUrl} alt="" className="size-full object-cover" /> : <UserRound className="size-6" />}
+        {isSignedIn && user?.imageUrl ? <img src={user.imageUrl} alt="" className="size-full object-cover" /> : <UserRound className={compact ? 'size-[18px]' : 'size-6'} />}
       </button>
 
       {/* Rendered into <body>: inside the floating top bar it would be stuck at the bar's layer,
@@ -118,6 +126,7 @@ export const ProfileDrawer: React.FC<{
                   </div>
                 </div>
 
+                {treesPlanted !== undefined && upcomingDrives !== undefined && (
                 <div className="mt-5 grid grid-cols-2 gap-2 px-2">
                   <div className="rounded-2xl bg-muted p-3">
                     <p className="font-heading text-2xl font-bold tabular-nums">{treesPlanted}</p>
@@ -128,8 +137,10 @@ export const ProfileDrawer: React.FC<{
                     <p className="text-sm text-muted-foreground">{upcomingDrives === 1 ? 'drive coming up' : 'drives coming up'}</p>
                   </div>
                 </div>
+                )}
 
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Profile">
+                  {onHome && <NavRow icon={<House />} label="Home" hint="About us, how it works and upcoming drives" onClick={go(onHome)} />}
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
                   <NavRow icon={<UserRound />} label="Account" hint="Your details and notifications" onClick={go(onAccount)} />
@@ -146,6 +157,7 @@ export const ProfileDrawer: React.FC<{
                   </SignInButton>
                 </div>
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Drives">
+                  {onHome && <NavRow icon={<House />} label="Home" hint="About us, how it works and upcoming drives" onClick={go(onHome)} />}
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
                 </nav>
               </>

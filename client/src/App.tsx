@@ -36,6 +36,8 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 import { DrivesPage } from './pages/DrivesPage';
 import { SharedDrivePage } from './pages/SharedDrivePage';
+import { HomePage } from './pages/HomePage';
+import { DonatePage } from './pages/DonatePage';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
 type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives';
@@ -59,7 +61,12 @@ export default function App() {
   const sharedDriveId = new URLSearchParams(window.location.search).get('drive');
   // The page-load intro (components/IntroAnimation.tsx) is switched off for now.
   // To bring it back, import it here and render <IntroAnimation /> after the page.
-  return sharedDriveId ? <SharedDrivePage driveId={sharedDriveId} /> : <MapApp />;
+  if (sharedDriveId) return <SharedDrivePage driveId={sharedDriveId} />;
+  // The home page is only the bare address and the Donate page /donate; every other path (/map, and sign-in return addresses) is the app
+  const path = window.location.pathname.replace(/\/+$/, '');
+  if (path === '') return <HomePage />;
+  if (path === '/donate') return <DonatePage />;
+  return <MapApp />;
 }
 
 /**
@@ -67,9 +74,15 @@ export default function App() {
  * closes them instead of leaving the app.
  */
 function useScreens() {
-  const [screen, setScreen] = useState<Screen>('map');
+  // /map?open=drives (and myTrees, account, admin: the home page's links) opens on that page, with the map behind it for the back button
+  const [first] = useState<Screen>(() => {
+    const asked = new URLSearchParams(window.location.search).get('open');
+    return asked === 'drives' || asked === 'myTrees' || asked === 'account' || asked === 'admin' ? asked : 'map';
+  });
+  const [screen, setScreen] = useState<Screen>(first);
   useEffect(() => {
     window.history.replaceState({ ptScreen: 'map' }, '');
+    if (first !== 'map') window.history.pushState({ ptScreen: first }, '');
     const onPop = (e: PopStateEvent) => setScreen((e.state?.ptScreen as Screen) ?? 'map');
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -639,6 +652,7 @@ function MapApp() {
                     onDrives={() => open('drives')}
                     onAccount={() => open('account')}
                     onAdmin={() => open('admin')}
+                    onHome={() => window.location.assign('/')}
                   />
                 </div>
               </div>
