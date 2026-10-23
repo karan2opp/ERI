@@ -56,13 +56,21 @@ const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
 const TYPE_LABEL: Record<string, string> = { PLANTATION: 'Plantation drive', CLEANUP: 'Clean-up drive' };
 
-const whenWhere = (d: DriveInfo) => [d.date, d.time].filter(Boolean).join(' at ') + (d.address ? `, ${d.address}` : '');
+/** "14:30" as "2:30 pm": every time people see is 12-hour. Done by hand so it doesn't depend on the server's locale. */
+const clock12 = (time: string | null | undefined): string => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(time ?? '');
+  if (!m) return time ?? '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'am' : 'pm'}`;
+};
+
+const whenWhere = (d: DriveInfo) => [d.date, clock12(d.time)].filter(Boolean).join(' at ') + (d.address ? `, ${d.address}` : '');
 
 function content(event: DriveEvent, d: DriveInfo) {
   const kind = TYPE_LABEL[d.type] ?? 'Drive';
   if (event === 'CREATED') return { subject: `New ${kind.toLowerCase()}: ${d.title}`, headline: `New ${kind.toLowerCase()}`, line: whenWhere(d), button: 'See the drive' };
   if (event === 'UPDATED') return { subject: `Updated: ${d.title}`, headline: 'This drive was updated', line: `Now: ${whenWhere(d)}`, button: 'See what changed' };
-  return { subject: `Cancelled: ${d.title}`, headline: 'This drive was cancelled', line: `It was planned for ${d.date}${d.time ? ' at ' + d.time : ''}.`, button: 'Open the app' };
+  return { subject: `Cancelled: ${d.title}`, headline: 'This drive was cancelled', line: `It was planned for ${d.date}${d.time ? ' at ' + clock12(d.time) : ''}.`, button: 'Open the app' };
 }
 
 function buildEmail(event: DriveEvent, d: DriveInfo, to: { email: string; name: string | null }): EmailMessage {

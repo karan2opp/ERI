@@ -3,6 +3,7 @@ import { CalendarDays, CheckCircle2, ChevronRight, Lock, Search, X } from 'lucid
 import type { Drive, DriveType, DriveVisibility } from '../types';
 import { fetchDrivesPage, type DrivesPageResult } from '../services/api';
 import { DRIVE_TYPE_LABEL, driveStartsAt, isUpcoming } from '../lib/drives';
+import { formatClock } from '../lib/time';
 import { cn } from '../lib/cn';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -66,7 +67,7 @@ const DriveCard: React.FC<{ drive: Drive; showVisibility: boolean; onOpen: (d: D
         <span className="min-w-0 flex-1">
           <span className="block truncate text-lg font-medium">{drive.title}</span>
           <span className="block truncate text-muted-foreground">
-            {DRIVE_TYPE_LABEL[drive.type]} · {at ? at.toLocaleDateString('en-IN', { weekday: 'short' }) : drive.date}, {drive.time}
+            {DRIVE_TYPE_LABEL[drive.type]} · {at ? at.toLocaleDateString('en-IN', { weekday: 'short' }) : drive.date}, {formatClock(drive.time)}
             {/* The year only when it isn't this year */}
             {at && at.getFullYear() !== new Date().getFullYear() ? `, ${at.getFullYear()}` : ''}
             {drive.address ? ` · ${drive.address}` : ''}

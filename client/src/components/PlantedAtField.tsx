@@ -1,4 +1,5 @@
 import { Field, Input } from './ui/field';
+import { TimeField } from './ui/time-field';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -29,9 +30,9 @@ export const PlantedAtField: React.FC<{
   const today = toLocalParts(new Date()).date;
   return (
     <Field label="When was it planted?" description={description}>
-      <div className="grid grid-cols-[3fr_2fr] gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Input type="date" value={date} max={today} min="1900-01-01" onChange={(e) => onDate(e.target.value)} aria-label="Planting date" />
-        <Input type="time" value={time} onChange={(e) => onTime(e.target.value)} aria-label="Planting time" />
+        <TimeField label="Planting time" value={time} onChange={onTime} />
       </div>
     </Field>
   );

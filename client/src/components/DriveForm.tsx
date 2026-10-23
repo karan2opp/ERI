@@ -9,6 +9,7 @@ import { Field, Input, Textarea } from './ui/field';
 import { Alert } from './ui/alert';
 import { Spinner } from './ui/spinner';
 import { MiniMap } from './MiniMap';
+import { TimeField } from './ui/time-field';
 
 // Mumbai, when we don't know where you are
 const FALLBACK_CENTER: LatLng = { lat: 19.076, lng: 72.8777 };
@@ -161,12 +162,12 @@ export const DriveForm: React.FC<{
       <Field label="Title" htmlFor="drive-title">
         <Input id="drive-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Sunday planting at Shivaji Park" maxLength={255} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Date" htmlFor="drive-date">
           <Input id="drive-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
         <Field label="Time" htmlFor="drive-time">
-          <Input id="drive-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+          <TimeField id="drive-time" label="Time" value={time} onChange={setTime} />
         </Field>
       </div>
       <Field label="What will volunteers do?" htmlFor="drive-desc" description="What to bring, where to meet, how long it takes.">

@@ -4,6 +4,7 @@ import type { WalkRoute } from '../../lib/route';
 import { formatDistance, formatMinutes } from '../../utils/geo';
 import { Button, buttonClass } from '../ui/button';
 import { Spinner } from '../ui/spinner';
+import { formatTime } from '../../lib/time';
 
 // Within this distance we say you've arrived
 export const ARRIVED_WITHIN_M = 20;
@@ -35,7 +36,7 @@ export const NavigationPanel: React.FC<{
 }> = ({ name, destination, route, loading, remaining, onEnd }) => {
   const meters = remaining ?? route?.meters ?? null;
   const minutes = meters !== null ? Math.max(1, Math.round(meters / 80)) : null;
-  const arrive = minutes !== null ? new Date(Date.now() + minutes * 60_000).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : null;
+  const arrive = minutes !== null ? formatTime(new Date(Date.now() + minutes * 60_000)) : null;
   const google = `https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}&travelmode=walking`;
 
   return (

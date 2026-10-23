@@ -1,4 +1,5 @@
 import type { Drive, DriveType, DriveVisibility } from '../types';
+import { formatClock } from './time';
 
 export const DRIVE_TYPE_LABEL: Record<DriveType, string> = {
   PLANTATION: 'Plantation drive',
@@ -10,13 +11,13 @@ export const DRIVE_VISIBILITY_LABEL: Record<DriveVisibility, string> = {
   TEAM: 'Team only',
 };
 
-/** "Sun, 12 October, 09:00" */
+/** "Sun, 12 October, 9:00 am" */
 export const formatDriveDate = (drive: Pick<Drive, 'date' | 'time'>) => {
   const date = new Date(drive.date);
   const day = Number.isNaN(date.getTime())
     ? drive.date
     : date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long' });
-  return `${day}, ${drive.time}`;
+  return `${day}, ${formatClock(drive.time)}`;
 };
 
 export const driveMapsUrl = (drive: Drive) =>

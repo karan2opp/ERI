@@ -62,7 +62,7 @@ export function formatAgeShort(age: Age): string {
 
 /** "Mon, 14 Oct 2024, 3:10 pm" */
 export const formatDateTime = (d: Date) =>
-  d.toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  d.toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 
 /** The current time, refreshed every `intervalMs` (default a minute) so ages tick along. */
 export function useNow(intervalMs = 60_000): Date {

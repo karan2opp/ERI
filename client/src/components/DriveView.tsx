@@ -13,6 +13,7 @@ import { ConfirmDialog } from './ui/confirm-dialog';
 import { AudienceField, DriveForm } from './DriveForm';
 import { ExpandableText } from './ui/expandable-text';
 import { Button, buttonClass } from './ui/button';
+import { formatClock, formatTime } from '../lib/time';
 import { LiveTracker } from './LiveTracker';
 import { MiniMap } from './MiniMap';
 import { DriveRecap } from './DriveRecap';
@@ -79,7 +80,7 @@ export const DriveView: React.FC<{
 
   const at = driveStartsAt(drive);
   const fullDate = at ? at.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : drive.date;
-  const time = at ? at.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : drive.time;
+  const time = at ? formatTime(at) : formatClock(drive.time);
 
   return (
     <div className="flex flex-col gap-5">
