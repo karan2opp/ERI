@@ -78,6 +78,32 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
 
 ---
 
+## 🏠 Pages
+
+| Address | What |
+|---|---|
+| `/` | The public home page: hero photo, how it works, upcoming public drives and how to join in |
+| `/map` | The tree map and the app (`/map?open=drives` opens on the Drives page) |
+| `/?drive=<id>` | A drive's own page (the link people share) |
+
+The home page has four number boxes: **trees planted**, **plantation drives**, **clean-up drives** and **waste collected**. The server counts the first three (`GET /api/v1/stats`, public: verified trees, and drives that have passed or been marked completed, by type); **waste collected** is a number admins keep up to date in **Admin → Settings → Waste collected** (kilograms), since nothing else records it. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Account and Admin, which open inside the app at `/map?open=…`). On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
+
+**Join the team.** Admins paste the link to a Google Form in **Admin → Settings → Join the team form** (it must start with `https://`). While a link is set, the home page shows a **Join the team** button beside **Open the tree map** at the top, a **Join the team** card in Get involved and a button in the closing banner, all opening the form in a new tab; with no link, neither shows. The link is public (`GET /api/v1/site`) and stored in `app_settings`, so nothing needs a migration.
+
+**Donate page, footer and contact details.** `/donate` explains what donations pay for and has a **Donate on WhatsApp** button that opens a chat with the team (with a message ready to send). The footer of the home and Donate pages has Instagram, YouTube, a contact email and phone. Admins fill these in under **Admin → Socials**. Until each one is set, the footer shows it greyed out as "coming soon" and the Donate button stays switched off. Links must start with `https://`, and phone numbers are tidied to `+91…` form. They are public through `GET /api/v1/site` and stored in `app_settings`, so nothing needs a migration.
+
+## 🔔 The bell (in-app notifications)
+
+Signed-in people have a bell on the map and in the home page header, with how many notifications they haven't read and the list (10 at a time from the server). New ones arrive live over the app's socket connection, the bell swings and a soft chime plays (made in the browser; it can be switched off per device in the list, and browsers only allow sound after the first tap on the page). Tapping one marks it read and opens it.
+
+| What | Who gets it | Tapping it opens |
+|---|---|---|
+| A drive is scheduled | The people the admin chose to tell (team, or everyone; nobody for "Don't send"), not the admin who scheduled it | The drive's page |
+| Someone new signs up ("Karan joined") | Admins and super admins | That person's profile in Admin |
+| A tree is planted ("Karan planted a new tree") | Admins and super admins, not the planter | The tree on the map, or Admin → Review if it is waiting for review |
+
+Routes: `GET /api/v1/notifications/inbox?page=`, `GET …/inbox/unread-count`, `POST …/inbox/:id/read`, `POST …/inbox/read-all` (your own only). Each signed-in socket joins the room `user:<id>`. Needs the new `notifications` table (`npm run db:push`).
+
 ## 🔐 Authentication & Admins
 
 - **Clerk is the only way to sign in.** The API identifies users exclusively from the verified Clerk session token; headers like `x-user-id` are ignored. Without `CLERK_*` keys every protected route returns 401.
@@ -94,6 +120,8 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
   ```sql
   UPDATE users SET role = 'SUPER_ADMIN' WHERE email = 'you@example.com';
   ```
+- **Names are unique** (capital letters and extra spaces don't count). When someone signs up with a name that is taken, they become "Name 2", "Name 3" and so on, and that name is saved in Clerk too. Changing a name goes through the server (`PUT /api/v1/users/me/name`), which refuses a taken name with a 409, and a unique index on `lower(name)` backs it up in the database. Run `npm run db:push` for the index; if two existing users share a name, rename one first.
+- **Admins see a user's sign-in ID only if they are a super admin** (the User ID line on a profile in Admin → Users).
 - **Phone numbers:** anyone can add an optional phone number on their Account page. It is **not verified** (no code is sent) and is only visible to the person and to admins; it never appears in public tree, care or drive data. Admins can open any user's profile from **Admin → Users** (details, phone, role, trees planted, care activity) and search users by name, email or phone.
 - Admin routes (`/api/v1/admin/*`) and drive creation (`POST /api/v1/drives`) require `ADMIN`. Reading drives (`GET /api/v1/drives…`) is open to anyone but filtered by who is asking (see below).
 
