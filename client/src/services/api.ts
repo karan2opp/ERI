@@ -34,6 +34,15 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+/**
+ * Changes your name. Names are unique: the server answers 409 (NAME_TAKEN) when someone already has it.
+ * It also saves the name in Clerk, so reload the Clerk user afterwards.
+ */
+export const setMyName = async (firstName: string, lastName: string): Promise<User> => {
+  const res = await api.put('/users/me/name', { firstName, lastName });
+  return res.data.data;
+};
+
 export const syncCurrentUser = async (): Promise<User> => {
   const res = await api.post('/users/sync');
   return res.data.data;

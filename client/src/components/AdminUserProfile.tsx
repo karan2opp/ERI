@@ -26,6 +26,7 @@ import { Alert } from './ui/alert';
 import { Spinner } from './ui/spinner';
 import { Pager } from './ui/pager';
 import { RoleSelect } from './RoleSelect';
+import { useViewerRole } from '../lib/viewerRole';
 import { CARE_ICON } from './TreeLife';
 import { TreeHistoryPage } from './AdminTrees';
 
@@ -91,6 +92,7 @@ export const AdminUserProfile: React.FC<{ userId: string; isSelf: boolean; onClo
   onClose,
   onShowTreeOnMap,
 }) => {
+  const viewer = useViewerRole();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [failed, setFailed] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -164,9 +166,12 @@ export const AdminUserProfile: React.FC<{ userId: string; isSelf: boolean; onClo
               <Detail label="Last active">
                 {stats.lastActiveAt ? [agoIfRecent(stats.lastActiveAt), formatDateTime(new Date(stats.lastActiveAt))].filter(Boolean).join(' · ') : <span className="text-muted-foreground">No activity yet</span>}
               </Detail>
-              <Detail label="User ID">
-                <code className="text-sm break-all text-muted-foreground">{user.id}</code>
-              </Detail>
+              {/* The sign-in ID is for super admins only */}
+              {viewer === 'SUPER_ADMIN' && (
+                <Detail label="User ID">
+                  <code className="text-sm break-all text-muted-foreground">{user.id}</code>
+                </Detail>
+              )}
             </dl>
 
             <div className="grid grid-cols-2 gap-3">

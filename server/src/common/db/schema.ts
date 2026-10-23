@@ -1,4 +1,4 @@
-import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean, index } from 'drizzle-orm/pg-core';
+import { pgTable, varchar, text, doublePrecision, integer, timestamp, uuid, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 // Users Table (Synced with Clerk Auth)
@@ -15,7 +15,9 @@ export const users = pgTable('users', {
   emailDrives: boolean('email_drives').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+},
+// Two people can never have the same name, whatever the capital letters (an empty name doesn't count)
+(t) => [uniqueIndex('users_name_lower_unique').on(sql`lower(${t.name})`)]);
 
 // A browser or phone that turned on push notifications (one person can have several)
 export const pushSubscriptions = pgTable('push_subscriptions', {

@@ -4,6 +4,7 @@ import { db } from '../db';
 import { users, User } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { canSeeTeamDrives, isAdminRole } from '../auth/roles';
+import { normalizeName, splitName, uniqueName } from '../utils/userName';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -40,23 +41,46 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
         return res.status(401).json({ success: false, error: 'Account has no email address' });
       }
 
-      const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || email.split('@')[0];
+      // Names are unique: if someone already has this one ("Ravi Kumar"), this person becomes "Ravi Kumar 2"
+      const wanted = normalizeName([clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ')) || email.split('@')[0];
+      let name = await uniqueName(wanted);
+      // A first visit sends several requests at once; only the one that really creates the row does the extras below
+      let createdHere = false;
 
-      await db.insert(users).values({
-        id: userId,
-        email,
-        name,
-        avatarUrl: clerkUser.imageUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${userId}`
-      }).onConflictDoNothing();
+      for (let attempt = 0; attempt < 5 && !user; attempt++) {
+        const inserted = await db.insert(users).values({
+          id: userId,
+          email,
+          name,
+          avatarUrl: clerkUser.imageUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${userId}`
+        }).onConflictDoNothing().returning({ id: users.id });
+        createdHere = inserted.length > 0;
 
-      [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+        if (!user) {
+          const [sameEmail] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+          if (sameEmail) {
+            // Another row already owns this email (e.g. a legacy dev account).
+            return res.status(409).json({
+              success: false,
+              error: 'An account with this email already exists under a different sign-in'
+            });
+          }
+          // Not the email, so someone took this name a moment ago: pick the next free one
+          name = await uniqueName(wanted);
+        }
+      }
 
       if (!user) {
-        // The insert was skipped: another row already owns this email (e.g. a legacy dev account).
-        return res.status(409).json({
-          success: false,
-          error: 'An account with this email already exists under a different sign-in'
-        });
+        return res.status(503).json({ success: false, error: 'Could not set up your account just now. Try again.' });
+      }
+
+      if (createdHere) {
+        // Show the same name on the Account page as everyone else sees
+        if (user.name !== wanted && user.name) {
+          clerkClient.users.updateUser(userId, splitName(user.name)).catch((err) => console.warn('Could not update the name in Clerk:', err));
+        }
       }
     }
 

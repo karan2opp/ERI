@@ -7,6 +7,7 @@ import { db } from '../../common/db';
 import { users } from '../../common/db/schema';
 import { z } from 'zod';
 import { normalizePhone } from '../../common/utils/phone';
+import { isUniqueViolation, nameTaken, normalizeName, splitName } from '../../common/utils/userName';
 
 /**
  * requireAuth has already created/loaded the user row from the verified Clerk session.
@@ -18,16 +19,28 @@ export const syncUserController = async (req: AuthenticatedRequest, res: Respons
   const user = req.user!;
   try {
     const clerkUser = await clerkClient.users.getUser(user.id);
-    const name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || user.name;
+    let name = normalizeName([clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ')) || user.name;
     const avatarUrl = clerkUser.imageUrl || user.avatarUrl;
 
+    // Names are unique. If the name in Clerk now belongs to someone else (changed behind our back), keep ours
+    // and put it back in Clerk so the Account page agrees
+    if (name && name !== user.name && name.toLowerCase() !== (user.name ?? '').toLowerCase() && (await nameTaken(name, user.id))) {
+      name = user.name;
+      if (user.name) clerkClient.users.updateUser(user.id, splitName(user.name)).catch((err) => console.warn('Could not restore the name in Clerk:', err));
+    }
+
     if (name !== user.name || avatarUrl !== user.avatarUrl) {
-      const [updated] = await db
-        .update(users)
-        .set({ name, avatarUrl, updatedAt: new Date() })
-        .where(eq(users.id, user.id))
-        .returning();
-      return res.status(200).json({ success: true, data: updated });
+      try {
+        const [updated] = await db
+          .update(users)
+          .set({ name, avatarUrl, updatedAt: new Date() })
+          .where(eq(users.id, user.id))
+          .returning();
+        return res.status(200).json({ success: true, data: updated });
+      } catch (err) {
+        // Someone took the name this very moment: carry on with the old one
+        if (!isUniqueViolation(err)) throw err;
+      }
     }
   } catch (err) {
     // Clerk unreachable: carry on with what we have
@@ -128,5 +141,41 @@ export const confirmPasswordResetController = async (req: AuthenticatedRequest, 
   } catch (err) {
     console.error('Error resetting a password:', err);
     res.status(500).json({ success: false, error: "Couldn't change the password. Try again." });
+  }
+};
+
+/**
+ * PUT /users/me/name  { firstName, lastName? }
+ * Changes your name. Names are unique (capital letters don't matter), so a name someone already has is refused with 409.
+ * The name is saved here first, then in Clerk, so the Account page and the rest of the app agree.
+ */
+export const setMyNameController = async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z
+    .object({ firstName: z.string().trim().min(1).max(50), lastName: z.string().trim().max(50).optional().default('') })
+    .safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: 'Enter a first name (up to 50 characters) and, if you like, a last name.' });
+  }
+  const taken = { success: false, code: 'NAME_TAKEN', error: 'Someone already has that name. Add a middle initial or a number so yours is different.' };
+
+  const name = normalizeName(`${parsed.data.firstName} ${parsed.data.lastName}`);
+  const previous = req.user!.name;
+  try {
+    if (await nameTaken(name, req.userId!)) return res.status(409).json(taken);
+    const [updated] = await db.update(users).set({ name, updatedAt: new Date() }).where(eq(users.id, req.userId!)).returning();
+
+    try {
+      await clerkClient.users.updateUser(req.userId!, splitName(name));
+    } catch (err) {
+      // Clerk didn't take it: put the old name back so the two don't disagree
+      console.error('Could not save the name in Clerk:', err);
+      await db.update(users).set({ name: previous }).where(eq(users.id, req.userId!));
+      return res.status(502).json({ success: false, error: "Couldn't save your name. Try again." });
+    }
+    return res.status(200).json({ success: true, data: updated });
+  } catch (err) {
+    if (isUniqueViolation(err)) return res.status(409).json(taken);
+    console.error('Error changing name:', err);
+    return res.status(500).json({ success: false, error: "Couldn't save your name. Try again." });
   }
 };

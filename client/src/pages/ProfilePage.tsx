@@ -6,7 +6,7 @@ import { ROLE_LABEL } from '../lib/roles';
 import { PhoneSection } from '../components/PhoneSection';
 import { NotificationsSection } from '../components/NotificationsSection';
 import { PasswordSection } from '../components/PasswordSection';
-import { syncCurrentUser } from '../services/api';
+import { setMyName, syncCurrentUser } from '../services/api';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -85,11 +85,14 @@ export const ProfilePage: React.FC<{
     setSavingName(true);
     setNameNotice(null);
     try {
-      await user.update({ firstName: firstName.trim(), lastName: lastName.trim() });
+      // Through our server, which keeps names unique and saves the name in Clerk too
+      await setMyName(firstName.trim(), lastName.trim());
+      await user.reload();
       await afterChange();
       setNameNotice({ tone: 'success', text: 'Name saved.' });
     } catch (err) {
-      setNameNotice({ tone: 'error', text: clerkMessage(err, "Couldn't save your name. Try again.") });
+      const fromServer = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setNameNotice({ tone: 'error', text: fromServer || "Couldn't save your name. Try again." });
     } finally {
       setSavingName(false);
     }
