@@ -161,6 +161,8 @@ export const drives = pgTable('drives', {
   // people who can see the drive once it is completed (admins see them while preparing).
   status: varchar('status', { length: 10 }).default('SCHEDULED').notNull(),
   summary: text('summary'),
+  // Kilograms of waste collected at a clean-up drive, entered when an admin completes it (counts toward the home page total only while the drive is COMPLETED)
+  wasteKg: integer('waste_kg'),
   completedAt: timestamp('completed_at'),
   completedBy: varchar('completed_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),

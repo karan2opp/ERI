@@ -4,7 +4,8 @@ import { fetchSiteStats, type SiteStats } from '../../services/api';
 import { cn } from '../../lib/cn';
 
 // The four impact numbers (trees planted, plantation and clean-up drives, waste collected), shared by the home
-// and About pages. Each counts up from 0 when its box scrolls into view.
+// and About pages. They come from the server (GET /stats): the starting numbers saved in Admin > Settings plus
+// what the app counts. Each counts up from 0 when its box scrolls into view.
 
 type Tone = 'leaf' | 'bark' | 'cleanup';
 
@@ -21,14 +22,6 @@ const IMPACT: { key: keyof SiteStats; label: string; note: string; icon: React.R
   { key: 'cleanupDrives', label: 'Clean-up drives', note: 'Volunteer days clearing litter from our streets', icon: <Trash2 />, tone: 'cleanup' },
   { key: 'wasteCollectedKg', label: 'Waste collected', note: 'Litter taken off our streets and green spaces', icon: <Recycle />, tone: 'cleanup', unit: 'kg' },
 ];
-
-/**
- * PLACEHOLDER NUMBERS. While this is true the four boxes show the sample numbers below, not real counts,
- * so they must be switched off before the site is shown to the public. Set it to false to show what the
- * server counts (waste collected comes from Admin > Settings).
- */
-const SHOW_SAMPLE_NUMBERS = true;
-const SAMPLE_NUMBERS: SiteStats = { treesPlanted: 1250, plantationDrives: 18, cleanupDrives: 12, wasteCollectedKg: 3400 };
 
 /**
  * Counts up from 0 to `target` over about two seconds, easing out, once `start` is true (when the box is on screen).
@@ -93,14 +86,13 @@ const ImpactBox: React.FC<{ item: (typeof IMPACT)[number]; target: number | null
   );
 };
 
-/** The four numbers from the server (or the placeholders while SHOW_SAMPLE_NUMBERS is true), or null while loading. */
+/** The four numbers from the server (the starting numbers plus what the app counts), or null while loading. */
 function useImpactNumbers(): SiteStats | null {
   const [stats, setStats] = useState<SiteStats | null>(null);
   useEffect(() => {
-    if (SHOW_SAMPLE_NUMBERS) return;
     fetchSiteStats().then(setStats, () => {});
   }, []);
-  return SHOW_SAMPLE_NUMBERS ? SAMPLE_NUMBERS : stats;
+  return stats;
 }
 
 /** The four boxes: 2 across on phones, 4 across from md. */

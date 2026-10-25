@@ -98,6 +98,8 @@ export interface Drive {
   status?: 'SCHEDULED' | 'COMPLETED';
   /** How the drive went. Admins also see a draft before the drive is completed. */
   summary?: string | null;
+  /** Kilograms of waste collected, for a completed clean-up drive */
+  wasteKg?: number | null;
   completedAt?: string | null;
   createdAt?: string;
 }

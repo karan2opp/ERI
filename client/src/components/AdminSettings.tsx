@@ -9,7 +9,17 @@ import { Spinner } from './ui/spinner';
 
 const LIMIT_MIN = 1;
 const LIMIT_MAX = 50;
-const WASTE_MAX = 100_000_000;
+const IMPACT_MAX = 100_000_000;
+
+type BaselineKey = 'baselineTrees' | 'baselinePlantationDrives' | 'baselineCleanupDrives' | 'baselineWasteKg';
+
+/** The home page's starting numbers: what the team had done before the app. */
+const BASELINES: { key: BaselineKey; label: string; unit: string }[] = [
+  { key: 'baselineTrees', label: 'Trees planted', unit: 'trees' },
+  { key: 'baselinePlantationDrives', label: 'Plantation drives held', unit: 'drives' },
+  { key: 'baselineCleanupDrives', label: 'Clean-up drives held', unit: 'drives' },
+  { key: 'baselineWasteKg', label: 'Waste collected', unit: 'kg' },
+];
 
 /**
  * Admin > Settings (admins and super admins only): whose tree photos go to the AI photo check, and how many
@@ -22,8 +32,8 @@ export const AdminSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [limitText, setLimitText] = useState('');
   const [limitSaved, setLimitSaved] = useState(false);
-  const [wasteText, setWasteText] = useState('');
-  const [wasteSaved, setWasteSaved] = useState(false);
+  const [baseText, setBaseText] = useState<Record<BaselineKey, string>>({ baselineTrees: '', baselinePlantationDrives: '', baselineCleanupDrives: '', baselineWasteKg: '' });
+  const [baseSaved, setBaseSaved] = useState(false);
   const [joinText, setJoinText] = useState('');
   const [joinSaved, setJoinSaved] = useState<string | null>(null);
 
@@ -31,7 +41,7 @@ export const AdminSettings: React.FC = () => {
     fetchAppSettings().then((s) => {
       setSettings(s);
       setLimitText(String(s.drivePhotoLimit));
-      setWasteText(String(s.wasteCollectedKg));
+      setBaseText(Object.fromEntries(BASELINES.map((b) => [b.key, String(s[b.key])])) as Record<BaselineKey, string>);
       setJoinText(s.joinTeamFormUrl);
     }, () => setFailed(true));
   }, []);
@@ -72,21 +82,22 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
-  const waste = Number(wasteText);
-  const wasteValid = wasteText.trim() !== '' && Number.isInteger(waste) && waste >= 0 && waste <= WASTE_MAX;
+  const baseNumber = (key: BaselineKey) => Number(baseText[key]);
+  const baseValid = BASELINES.every(({ key }) => baseText[key].trim() !== '' && Number.isInteger(baseNumber(key)) && baseNumber(key) >= 0 && baseNumber(key) <= IMPACT_MAX);
+  const baseChanged = settings !== null && BASELINES.some(({ key }) => baseNumber(key) !== settings[key]);
 
-  const saveWaste = async () => {
-    if (!wasteValid) return;
-    setBusy('wasteCollectedKg');
+  const saveBaselines = async () => {
+    if (!baseValid) return;
+    setBusy('baselineTrees');
     setError(null);
-    setWasteSaved(false);
+    setBaseSaved(false);
     try {
-      const next = await updateAppSettings({ wasteCollectedKg: waste });
+      const next = await updateAppSettings(Object.fromEntries(BASELINES.map(({ key }) => [key, baseNumber(key)])));
       setSettings(next);
-      setWasteText(String(next.wasteCollectedKg));
-      setWasteSaved(true);
+      setBaseText(Object.fromEntries(BASELINES.map((b) => [b.key, String(next[b.key])])) as Record<BaselineKey, string>);
+      setBaseSaved(true);
     } catch (err) {
-      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save the number. Try again.");
+      setError((err as { response?: { data?: { error?: string } } })?.response?.data?.error || "Couldn't save the numbers. Try again.");
     } finally {
       setBusy(null);
     }
@@ -177,34 +188,38 @@ export const AdminSettings: React.FC = () => {
         {limitSaved && <Alert tone="success">Saved. Drives can have up to {settings.drivePhotoLimit} {settings.drivePhotoLimit === 1 ? 'picture' : 'pictures'}.</Alert>}
       </section>
 
-      <section className="flex flex-col gap-3" aria-labelledby="settings-waste">
-        <h2 id="settings-waste" className="text-xl">Waste collected</h2>
+      <section className="flex flex-col gap-3" aria-labelledby="settings-numbers">
+        <h2 id="settings-numbers" className="text-xl">Starting numbers</h2>
         <p className="text-muted-foreground">
-          The total weight of waste collected in all clean-up drives, in kilograms. It is shown on the home page. The other three numbers there (trees, plantation drives and clean-up drives) are counted for you.
+          What the team had already done before using the app. The home and About pages show these <strong>plus what the app counts itself</strong>: trees planted by people on the map, drives that have been held, and the waste you record when you complete a clean-up drive. Change them only if the starting figures were wrong.
         </p>
-        <Field label="Waste collected (kg)" htmlFor="waste-collected" description="Update it after each clean-up. A whole number, 0 or more.">
-          <div className="flex gap-2">
-            <Input
-              id="waste-collected"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              step={1}
-              value={wasteText}
-              onChange={(e) => {
-                setWasteText(e.target.value);
-                setWasteSaved(false);
-              }}
-              aria-invalid={!wasteValid}
-              className="max-w-48"
-            />
-            <Button size="xl" onClick={saveWaste} disabled={!wasteValid || waste === settings.wasteCollectedKg || busy === 'wasteCollectedKg'}>
-              Save
-            </Button>
-          </div>
-        </Field>
-        {!wasteValid && <p className="text-sm text-destructive">Enter a whole number of kilograms, 0 or more.</p>}
-        {wasteSaved && <Alert tone="success">Saved. The home page now shows {settings.wasteCollectedKg.toLocaleString('en-IN')} kg.</Alert>}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {BASELINES.map(({ key, label, unit }) => {
+            const valid = baseText[key].trim() !== '' && Number.isInteger(baseNumber(key)) && baseNumber(key) >= 0 && baseNumber(key) <= IMPACT_MAX;
+            return (
+              <Field key={key} label={`${label} (${unit})`} htmlFor={`base-${key}`}>
+                <Input
+                  id={`base-${key}`}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  value={baseText[key]}
+                  onChange={(e) => {
+                    setBaseText((t) => ({ ...t, [key]: e.target.value }));
+                    setBaseSaved(false);
+                  }}
+                  aria-invalid={!valid}
+                />
+              </Field>
+            );
+          })}
+        </div>
+        {!baseValid && <p className="text-sm text-destructive">Enter whole numbers, 0 or more, in every box.</p>}
+        <Button size="xl" onClick={saveBaselines} disabled={!baseValid || !baseChanged || busy === 'baselineTrees'} className="self-start">
+          Save starting numbers
+        </Button>
+        {baseSaved && <Alert tone="success">Saved. The starting numbers are updated; the home page adds them to what the app counts.</Alert>}
       </section>
 
       <section className="flex flex-col gap-3" aria-labelledby="settings-join">

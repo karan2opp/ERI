@@ -1,4 +1,4 @@
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Recycle } from 'lucide-react';
 import type { Drive } from '../types';
 import { DrivePhotoGrid } from './DrivePhotoGrid';
 import { ExpandableText } from './ui/expandable-text';
@@ -17,6 +17,11 @@ export const DriveRecap: React.FC<{ drive: Drive }> = ({ drive }) => {
         <h3 id="drive-recap" className="text-lg">How it went</h3>
       </div>
       {completed && <p className="-mt-2 text-sm text-muted-foreground">Completed on {completed}</p>}
+      {drive.type === 'CLEANUP' && drive.wasteKg != null && (
+        <p className="flex items-center gap-2 font-medium">
+          <Recycle className="size-5 text-cleanup" aria-hidden="true" /> {drive.wasteKg.toLocaleString('en-IN')} kg of waste collected
+        </p>
+      )}
       {drive.summary && <ExpandableText text={drive.summary} />}
       <DrivePhotoGrid driveId={drive.id} />
     </section>

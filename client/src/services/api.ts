@@ -261,8 +261,11 @@ export interface AppSettings {
   verifyTeamPhotos: boolean;
   /** How many pictures one drive can have */
   drivePhotoLimit: number;
-  /** Kilograms of waste collected in all clean-ups (shown on the home page) */
-  wasteCollectedKg: number;
+  /** The home page's starting numbers: what the NGO had done before the app (the page adds what the app counts) */
+  baselineTrees: number;
+  baselinePlantationDrives: number;
+  baselineCleanupDrives: number;
+  baselineWasteKg: number;
   /** The Google Form for joining the team ("" means no button on the home page) */
   joinTeamFormUrl: string;
   /** Footer and Donate page details ("" until set) */
@@ -403,7 +406,7 @@ export const createGlobalDrive = async (data: Omit<DriveFields, 'googleMapsUrl'>
 };
 
 /** Admin: change anything about a drive. `notify` tells people about the change. */
-export const updateDrive = async (id: string, changes: Partial<DriveFields> & { summary?: string; notify?: NotifyAudience }): Promise<{ drive: Drive; notifying?: Notifying }> => {
+export const updateDrive = async (id: string, changes: Partial<DriveFields> & { summary?: string; wasteKg?: number | null; notify?: NotifyAudience }): Promise<{ drive: Drive; notifying?: Notifying }> => {
   const res = await api.patch(`/drives/${id}`, changes);
   return { drive: res.data.data, notifying: res.data.notifying };
 };
@@ -449,9 +452,12 @@ export const removeDrivePhoto = async (driveId: string, photoId: string): Promis
   await api.delete(`/drives/${driveId}/photos/${photoId}`);
 };
 
-/** Admin: marks the drive completed (it needs a summary, sent now or saved before). */
-export const completeDrive = async (driveId: string, summary: string): Promise<Drive> => {
-  const res = await api.post(`/drives/${driveId}/complete`, { summary });
+/**
+ * Admin: marks the drive completed (it needs a summary, sent now or saved before). For a clean-up drive,
+ * `wasteKg` is the waste collected, added to the home page's total.
+ */
+export const completeDrive = async (driveId: string, summary: string, wasteKg?: number): Promise<Drive> => {
+  const res = await api.post(`/drives/${driveId}/complete`, { summary, ...(wasteKg !== undefined ? { wasteKg } : {}) });
   return res.data.data;
 };
 

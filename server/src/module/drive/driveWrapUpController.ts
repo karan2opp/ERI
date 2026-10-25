@@ -7,7 +7,7 @@ import { isUuid } from '../../common/utils/validation';
 import { isAdminRole } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
-import { getSettings } from '../../common/services/settingsService';
+import { IMPACT_MAX, getSettings } from '../../common/services/settingsService';
 import { accessProblem } from './driveController';
 
 /**
@@ -16,14 +16,20 @@ import { accessProblem } from './driveController';
  */
 
 /**
- * POST /drives/:id/complete { summary? } (admin): marks the drive as done. It needs a summary (sent now or
- * saved earlier).
+ * POST /drives/:id/complete { summary?, wasteKg? } (admin): marks the drive as done. It needs a summary (sent now or
+ * saved earlier). For a clean-up drive the admin can say how many kilograms of waste were collected; that is
+ * added to the total on the home page. Leaving it out keeps any amount saved earlier.
  */
 export const completeDrive = async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!isUuid(id)) return res.status(404).json({ success: false, error: 'Drive not found' });
-  const parsed = z.object({ summary: z.string().trim().max(5000).optional() }).safeParse(req.body ?? {});
-  if (!parsed.success) return res.status(400).json({ success: false, error: 'The summary can be up to 5000 characters' });
+  const parsed = z
+    .object({
+      summary: z.string().trim().max(5000, 'The summary can be up to 5000 characters').optional(),
+      wasteKg: z.number({ message: 'Waste collected must be a whole number of kilograms' }).int('Waste collected must be a whole number of kilograms').min(0, 'Waste collected cannot be negative').max(IMPACT_MAX, 'That is too much waste to be right').nullable().optional(),
+    })
+    .safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? 'Check the summary and the waste collected' });
 
   try {
     const [drive] = await db.select().from(drives).where(eq(drives.id, id));
@@ -32,11 +38,13 @@ export const completeDrive = async (req: Request, res: Response) => {
 
     const summary = parsed.data.summary || drive.summary;
     if (!summary?.trim()) return res.status(400).json({ success: false, error: 'Write a summary of the drive before completing it' });
+    const { wasteKg } = parsed.data;
+    if (wasteKg != null && drive.type !== 'CLEANUP') return res.status(400).json({ success: false, error: 'Waste collected can only be recorded for a clean-up drive' });
 
     // Only moves a drive that is still scheduled, so two admins completing it at once can't both succeed
     const [done] = await db
       .update(drives)
-      .set({ status: 'COMPLETED', summary, completedAt: new Date(), completedBy: (req as AuthenticatedRequest).userId })
+      .set({ status: 'COMPLETED', summary, completedAt: new Date(), completedBy: (req as AuthenticatedRequest).userId, ...(wasteKg !== undefined ? { wasteKg } : {}) })
       .where(and(eq(drives.id, id), eq(drives.status, 'SCHEDULED')))
       .returning();
     if (!done) return res.status(409).json({ success: false, error: 'This drive is already completed' });

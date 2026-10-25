@@ -21,6 +21,7 @@ import { setRealtime, userRoom } from './common/realtime';
 import statsRoutes from './module/stats/statsRoutes';
 import siteRoutes from './module/site/siteRoutes';
 import { ensureDefaultCategories } from './common/services/defaultCategories';
+import { ensureBaselineNumbers } from './common/services/settingsService';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
 import placeRoutes from './module/place/placeRoutes';
@@ -109,6 +110,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Allowed Client Origins: ${allowedOrigins.join(', ')}`);
   // The starting tree categories (once ever); a failure here only logs
   void ensureDefaultCategories();
+  // The home page's starting numbers (once; admins change them in Settings)
+  void ensureBaselineNumbers();
 });
 
 const io = new Server(server, {

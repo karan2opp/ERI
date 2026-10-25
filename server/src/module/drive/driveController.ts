@@ -7,7 +7,7 @@ import { isUuid } from '../../common/utils/validation';
 import { DRIVE_TYPES, DRIVE_VISIBILITIES, canSeeTeamDrives, isAdminRole } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
-import { getSettings } from '../../common/services/settingsService';
+import { IMPACT_MAX, getSettings } from '../../common/services/settingsService';
 import { NOTIFY_AUDIENCES, deliverDriveNotification, resolveRecipients, type NotifyAudience, type Recipients } from '../../common/services/driveNotifier';
 import { notifyDriveScheduled } from '../../common/services/inbox';
 
@@ -51,11 +51,11 @@ const audienceProblem = (visibility: string, notify: string) =>
 const notifying = (notify: NotifyAudience, r: Recipients) => ({ audience: notify, emails: r.emails.length, devices: r.subscriptions.length });
 
 /**
- * A drive as this person may see it. The summary of a drive that isn't completed yet is a draft
- * only admins can read.
+ * A drive as this person may see it. The summary (and the waste collected) of a drive that isn't completed
+ * yet is a draft only admins can read.
  */
 export const present = (drive: Drive, req: Request): Drive =>
-  drive.status === 'COMPLETED' || isAdminRole((req as AuthenticatedRequest).userRole) ? drive : { ...drive, summary: null };
+  drive.status === 'COMPLETED' || isAdminRole((req as AuthenticatedRequest).userRole) ? drive : { ...drive, summary: null, wasteKg: null };
 
 /** Why this person can't open this drive, if they can't: a team-only drive needs a team member or admin. */
 export const accessProblem = (drive: Drive, req: Request): { status: number; error: string } | null => {
@@ -106,6 +106,8 @@ const updateDriveSchema = z
     visibility: driveFields.visibility,
     // The write-up of how the drive went; empty clears it
     summary: z.string().trim().max(5000),
+    // Kilograms of waste collected at a clean-up drive; null clears it
+    wasteKg: z.number({ message: 'Waste collected must be a whole number of kilograms' }).int('Waste collected must be a whole number of kilograms').min(0, 'Waste collected cannot be negative').max(IMPACT_MAX, 'That is too much waste to be right').nullable(),
   })
   .partial()
   .extend({ notify: z.enum(NOTIFY_AUDIENCES).default('NONE') })
@@ -137,10 +139,17 @@ export const updateDrive = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'A completed drive needs a summary. Write a new one instead of clearing it.' });
     }
 
+    // Waste belongs to clean-up drives: a drive that becomes a plantation drive loses it
+    const type = changes.type ?? before.type;
+    if (type !== 'CLEANUP' && changes.wasteKg != null) {
+      return res.status(400).json({ success: false, error: 'Waste collected can only be recorded for a clean-up drive' });
+    }
+
     const values = {
       ...changes,
       googleMapsUrl: changes.googleMapsUrl === '' ? null : changes.googleMapsUrl,
       summary: changes.summary === '' ? null : changes.summary,
+      ...(type !== 'CLEANUP' ? { wasteKg: null } : {}),
     };
     const [updated] = await db.update(drives).set(values).where(eq(drives.id, id)).returning();
 
