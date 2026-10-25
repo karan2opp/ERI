@@ -7,6 +7,8 @@ import { isUuid } from '../../common/utils/validation';
 import { isAdminRole } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
+import { MAX_PLACE_PHOTOS, claimUpload, discardUploads, inspectUpload, uploadRefSchema } from '../../common/services/uploads';
+import { sendUploadError } from '../../common/utils/uploadErrors';
 import { notifyAdmins } from '../../common/services/inbox';
 import { coordinatesFromGoogleMapsUrl, isGoogleMapsUrl } from '../../common/utils/googleMaps';
 
@@ -174,12 +176,10 @@ export const deletePlaceForm = async (req: Request, res: Response) => {
   }
 };
 
-// Multipart text fields arrive as strings
-const optionalNumber = z.preprocess((v) => (v === '' || v === undefined || v === null ? undefined : Number(v)), z.number().finite().optional());
 const suggestionSchema = z.object({
-  kind: z.preprocess((v) => (v === '' ? undefined : v), z.enum(PLACE_KINDS, { message: 'Choose planting trees or a clean-up drive' }).optional()),
-  latitude: optionalNumber.pipe(z.number().min(-90).max(90).optional()),
-  longitude: optionalNumber.pipe(z.number().min(-180).max(180).optional()),
+  kind: z.enum(PLACE_KINDS, { message: 'Choose planting trees or a clean-up drive' }).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   googleMapsUrl: z
     .string()
     .trim()
@@ -188,27 +188,16 @@ const suggestionSchema = z.object({
     .transform((v) => v || undefined)
     .refine((v) => v === undefined || isGoogleMapsUrl(v), 'Paste a Google Maps link (it starts with https://maps.app.goo.gl or https://www.google.com/maps)'),
   landmark: z.string().trim().min(1, 'Add a landmark so we can find the place').max(255, 'The landmark can be up to 255 characters'),
-  // A JSON list of answers, in the order of the form's questions
-  answers: z
-    .string()
-    .optional()
-    .transform((v, ctx) => {
-      if (!v) return [];
-      try {
-        const list = JSON.parse(v);
-        if (Array.isArray(list) && list.every((a) => typeof a === 'string')) return list.map((a: string) => a.trim());
-      } catch {
-        // falls through to the error below
-      }
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Answers must be a list of text' });
-      return z.NEVER;
-    }),
+  // The answers, in the order of the form's questions
+  answers: z.array(z.string().trim().max(1000, 'An answer can be up to 1000 characters')).max(10).default([]),
+  // Up to 5 pictures, already uploaded straight to Cloudinary
+  photos: z.array(uploadRefSchema).max(MAX_PLACE_PHOTOS, `Add up to ${MAX_PLACE_PHOTOS} pictures`).default([]),
 });
 
 /**
- * POST /place-forms/:id/suggestions (signed in, multipart): sends a place through an open form. Fields: kind
- * (when the form takes either), latitude and longitude (the pin on our map) and/or googleMapsUrl, landmark,
- * answers (JSON list), and up to 5 pictures in "photos".
+ * POST /place-forms/:id/suggestions (signed in): sends a place through an open form. JSON: kind (when the form takes
+ * either), latitude and longitude (the pin on our map) and/or googleMapsUrl, landmark, answers, and up to 5
+ * pictures that were already uploaded straight to Cloudinary (each { publicId, version, signature }).
  */
 export const createSuggestion = async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -216,43 +205,60 @@ export const createSuggestion = async (req: Request, res: Response) => {
   const parsed = suggestionSchema.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ success: false, error: firstError(parsed.error) });
   const input = parsed.data;
-  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   const r = req as AuthenticatedRequest;
+  const userId = r.userId!;
+  // Only photos this person really uploaded (checked below) may ever be thrown away
+  let verified: string[] = [];
 
   try {
+    // Every picture has to be genuine and this person's before anything else happens (so nothing else is touched)
+    const seen = new Set<string>();
+    for (const ref of input.photos) {
+      if (seen.has(ref.publicId)) {
+        await discardUploads(verified);
+        return res.status(400).json({ success: false, error: 'The same picture was added twice' });
+      }
+      seen.add(ref.publicId);
+      await inspectUpload(userId, 'PLACE', ref);
+      verified.push(ref.publicId);
+    }
+
     const [form] = await db.select().from(placeForms).where(eq(placeForms.id, id));
-    if (!form) return res.status(404).json({ success: false, error: 'Form not found' });
-    if (form.status !== 'OPEN') return res.status(409).json({ success: false, error: 'This form is closed and no longer takes places' });
+    if (!form) {
+      await discardUploads(verified);
+      return res.status(404).json({ success: false, error: 'Form not found' });
+    }
+    // Anything refused from here on leaves the pictures unused: they are thrown away
+    const refuse = async (status: number, error: string) => {
+      await discardUploads(verified);
+      return res.status(status).json({ success: false, error });
+    };
+    if (form.status !== 'OPEN') return refuse(409, 'This form is closed and no longer takes places');
 
     const kind = form.kind === 'EITHER' ? input.kind : form.kind;
-    if (!kind) return res.status(400).json({ success: false, error: 'Say whether the place is for planting trees or a clean-up drive' });
+    if (!kind) return refuse(400, 'Say whether the place is for planting trees or a clean-up drive');
 
     // Both halves of the pin or neither; without a pin, the Google Maps link has to say where
     if ((input.latitude === undefined) !== (input.longitude === undefined)) {
-      return res.status(400).json({ success: false, error: 'Send both the latitude and the longitude of the pin' });
+      return refuse(400, 'Send both the latitude and the longitude of the pin');
     }
     const pin = input.latitude !== undefined && input.longitude !== undefined ? { lat: input.latitude, lng: input.longitude } : input.googleMapsUrl ? coordinatesFromGoogleMapsUrl(input.googleMapsUrl) : null;
-    if (!pin && !input.googleMapsUrl) return res.status(400).json({ success: false, error: 'Put the pin on the map or paste a Google Maps link' });
+    if (!pin && !input.googleMapsUrl) return refuse(400, 'Put the pin on the map or paste a Google Maps link');
 
     const questions = form.questions ?? [];
     if (input.answers.length !== questions.length || input.answers.some((a) => !a)) {
-      return res.status(400).json({ success: false, error: questions.length === 1 ? 'Answer the question' : 'Answer every question' });
-    }
-    if (input.answers.some((a) => a.length > 1000)) return res.status(400).json({ success: false, error: 'An answer can be up to 1000 characters' });
-
-    const uploads = await Promise.allSettled(files.map((f) => CloudinaryService.uploadImage(f, 'plantree/places')));
-    const photos = uploads.flatMap((u) => (u.status === 'fulfilled' ? [u.value] : []));
-    if (photos.length !== files.length) {
-      removePhotos(photos);
-      return res.status(502).json({ success: false, error: "Couldn't upload the pictures. Try again." });
+      return refuse(400, questions.length === 1 ? 'Answer the question' : 'Answer every question');
     }
 
-    try {
-      const [row] = await db
+    // The pictures are claimed in the same transaction as the place: both are saved, or neither
+    const row = await db.transaction(async (tx) => {
+      const photos: { url: string; publicId: string }[] = [];
+      for (const ref of input.photos) photos.push(await claimUpload(tx, userId, 'PLACE', ref));
+      const [saved] = await tx
         .insert(placeSuggestions)
         .values({
           formId: form.id,
-          userId: r.userId,
+          userId,
           kind,
           latitude: pin?.lat ?? null,
           longitude: pin?.lng ?? null,
@@ -262,21 +268,23 @@ export const createSuggestion = async (req: Request, res: Response) => {
           photos,
         })
         .returning();
-      res.status(201).json({ success: true, data: { id: row.id, createdAt: row.createdAt } });
-      void notifyAdmins(
-        {
-          type: 'PLACE_SUGGESTED',
-          title: `${r.userName || 'Someone'} suggested a place ${kind === 'CLEANUP' ? 'to clean up' : 'for planting'}`,
-          body: `${input.landmark} · ${form.title}`,
-          link: `/map?open=admin&tab=places&form=${form.id}`,
-        },
-        r.userId
-      );
-    } catch (err) {
-      removePhotos(photos);
-      throw err;
-    }
+      return saved;
+    });
+    verified = [];
+    res.status(201).json({ success: true, data: { id: row.id, createdAt: row.createdAt } });
+    void notifyAdmins(
+      {
+        type: 'PLACE_SUGGESTED',
+        title: `${r.userName || 'Someone'} suggested a place ${kind === 'CLEANUP' ? 'to clean up' : 'for planting'}`,
+        body: `${input.landmark} · ${form.title}`,
+        link: `/map?open=admin&tab=places&form=${form.id}`,
+      },
+      userId
+    );
   } catch (err) {
+    // The place was not saved: its verified pictures are not needed
+    await discardUploads(verified);
+    if (sendUploadError(res, err)) return;
     console.error('Error sending a place:', err);
     if (!res.headersSent) res.status(500).json({ success: false, error: "Couldn't send the place. Try again." });
   }

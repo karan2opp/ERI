@@ -78,7 +78,19 @@ const TEXT_KEYS = {
 type TextKey = keyof typeof TEXT_KEYS;
 const isTextKey = (key: string): key is TextKey => key in TEXT_KEYS;
 
+// Settings are read on almost every photo request and change a few times a month, so they are remembered for a
+// short while. Saving a setting forgets them at once; another copy of the server may lag by up to this long.
+const CACHE_MS = 30_000;
+let cached: { at: number; value: AppSettings } | null = null;
+
 export async function getSettings(): Promise<AppSettings> {
+  if (cached && Date.now() - cached.at < CACHE_MS) return { ...cached.value };
+  const value = await readSettings();
+  cached = { at: Date.now(), value };
+  return { ...value };
+}
+
+async function readSettings(): Promise<AppSettings> {
   const rows = await db.select().from(appSettings);
   const settings = { ...DEFAULTS };
   for (const row of rows) {
@@ -115,6 +127,7 @@ export async function updateSettings(patch: Partial<AppSettings>, userId: string
   for (const key of BASELINE_KEYS) {
     if (patch[key] !== undefined) await save(key, String(patch[key]), userId);
   }
+  cached = null;
   return getSettings();
 }
 
@@ -136,6 +149,7 @@ export async function ensureBaselineNumbers(): Promise<void> {
       .insert(appSettings)
       .values(BASELINE_KEYS.map((key) => ({ key, value: String(BASELINE_DEFAULTS[key]) })))
       .onConflictDoNothing();
+    cached = null;
   } catch (err) {
     console.error('Could not save the starting numbers:', err instanceof Error ? err.message : err);
   }

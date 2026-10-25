@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, MapPin } from 'lucide-react';
 import type { LatLng, Tree, TreeCategory } from '../types';
 import { checkTreePhoto, createTree, type PhotoVerdict } from '../services/api';
+import { discardPhoto, uploadPhotos, type UploadedPhoto } from '../lib/uploadPhoto';
 import { MAX_GPS_ACCURACY_M, MAX_PLANTING_DISTANCE_M } from '../lib/trees';
 import { getDistanceInMeters, reverseGeocode } from '../utils/geo';
 import { FixError, captureLocation, type LocationFix } from '../lib/locationFix';
@@ -73,22 +74,40 @@ export const PlantTreePage: React.FC<{
   }, [movedAway]);
 
   const [photo, setPhoto] = useState<File | null>(null);
-  // Checked the moment the photo is taken: null while checking, 'ERROR' if the check couldn't be done
+  // The photo goes straight from the phone to Cloudinary the moment it is taken (never through our server), and is
+  // checked there. A retake, or leaving the page, throws the old upload away.
+  const [uploaded, setUploaded] = useState<UploadedPhoto | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadTry, setUploadTry] = useState(0);
+  // Checked once uploaded: null while checking, 'ERROR' if the check couldn't be done
   // (planting still checks on the server, so that doesn't block anything)
   const [verdict, setVerdict] = useState<PhotoVerdict | 'ERROR' | null>(null);
   useEffect(() => {
+    setUploaded(null);
     setVerdict(null);
+    setUploadError(null);
     if (!photo) return;
     let cancelled = false;
-    checkTreePhoto(photo).then(
-      (v) => !cancelled && setVerdict(v),
-      () => !cancelled && setVerdict('ERROR')
-    );
+    const sent: { photo: UploadedPhoto | null } = { photo: null };
+    (async () => {
+      try {
+        [sent.photo] = await uploadPhotos('TREE', [photo]);
+        if (cancelled) return;
+        setUploaded(sent.photo);
+        const v = await checkTreePhoto(sent.photo).catch(() => 'ERROR' as const);
+        if (!cancelled) setVerdict(v);
+      } catch (err) {
+        if (!cancelled) setUploadError(err instanceof Error ? err.message : "The photo couldn't be uploaded. Try again.");
+      }
+    })();
     return () => {
       cancelled = true;
+      // Once the tree is planted the server has already used this photo, so this does nothing
+      if (sent.photo) void discardPhoto(sent.photo.publicId);
     };
-  }, [photo]);
-  const checking = Boolean(photo) && verdict === null;
+  }, [photo, uploadTry]);
+  const uploading = Boolean(photo) && !uploaded && !uploadError;
+  const checking = Boolean(uploaded) && verdict === null;
   const [category, setCategory] = useState<TreeCategory | null>(null);
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
@@ -122,8 +141,12 @@ export const PlantTreePage: React.FC<{
       ? 'Confirm your location to continue'
       : !photo
         ? 'Take a photo of the tree'
-        : checking
-          ? 'Checking your photo…'
+        : uploadError
+          ? 'Upload the photo again'
+          : uploading
+            ? 'Uploading your photo…'
+            : checking
+              ? 'Checking your photo…'
           : verdict === 'FALSE'
             ? 'Retake the photo'
             : !plantedAt
@@ -139,31 +162,36 @@ export const PlantTreePage: React.FC<{
                       : null;
 
   const submit = async () => {
-    if (blocker || !fix || !photo || !category) return;
+    if (blocker || !fix || !uploaded || !category) return;
     setBusy(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append('name', name.trim());
-      form.append('categoryId', category.id);
-      form.append('description', description.trim());
-      form.append('address', address.trim());
-      // The tree is registered exactly where the location was confirmed. The same reading goes as the
-      // device position, which the server checks (distance and accuracy) before it saves anything.
-      form.append('latitude', String(fix.lat));
-      form.append('longitude', String(fix.lng));
-      form.append('deviceLatitude', String(fix.lat));
-      form.append('deviceLongitude', String(fix.lng));
-      form.append('deviceAccuracy', String(fix.accuracy));
-      if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
-      form.append('waterEveryDays', String(parseDays(schedule.water)));
-      form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
-      form.append('weedEveryDays', String(parseDays(schedule.weed)));
-      form.append('photo', photo);
-      onPlanted(await createTree(form));
+      onPlanted(
+        await createTree({
+          name: name.trim(),
+          categoryId: category.id,
+          description: description.trim(),
+          address: address.trim(),
+          // The tree is registered exactly where the location was confirmed. The same reading goes as the
+          // device position, which the server checks (distance and accuracy) before it saves anything.
+          latitude: fix.lat,
+          longitude: fix.lng,
+          deviceLatitude: fix.lat,
+          deviceLongitude: fix.lng,
+          deviceAccuracy: fix.accuracy,
+          plantedAt: plantedAt?.toISOString(),
+          waterEveryDays: parseDays(schedule.water)!,
+          fertilizeEveryDays: parseDays(schedule.fertilize)!,
+          weedEveryDays: parseDays(schedule.weed)!,
+          photo: uploaded,
+        })
+      );
     } catch (err) {
-      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(message || "Couldn't plant the tree. Check your connection and try again.");
+      const res = (err as { response?: { status?: number; data?: { error?: string; code?: string } } })?.response;
+      // The server threw this photo away (rejected, or the save failed): a new one has to be taken
+      const gone = ['NOT_A_TREE', 'UPLOAD_USED', 'BAD_UPLOAD'].includes(res?.data?.code ?? '') || (res?.status !== undefined && res.status >= 500 && res.status !== 503);
+      if (gone) setPhoto(null);
+      setError(res?.data?.error || "Couldn't plant the tree. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -208,10 +236,23 @@ export const PlantTreePage: React.FC<{
 
       <Field label="Photo of the tree" description="It has to show the tree or plant. Photos of anything else are rejected, and unclear ones are checked by an admin first.">
         <PhotoField file={photo} onChange={setPhoto} />
+        {uploading && (
+          <p role="status" className="flex items-center gap-2 text-muted-foreground">
+            <Spinner className="size-4" /> Uploading your photo…
+          </p>
+        )}
         {checking && (
           <p role="status" className="flex items-center gap-2 text-muted-foreground">
             <Spinner className="size-4" /> Checking your photo…
           </p>
+        )}
+        {uploadError && (
+          <div className="flex flex-col items-start gap-2">
+            <Alert tone="error">{uploadError}</Alert>
+            <Button variant="secondary" size="sm" onClick={() => setUploadTry((n) => n + 1)}>
+              Upload again
+            </Button>
+          </div>
         )}
         {verdict === 'TRUE' && <Alert tone="success">Looks like a tree or plant. Thanks!</Alert>}
         {verdict === 'FALSE' && <Alert tone="error">That doesn't look like a tree or plant. Retake the photo with the tree in the middle of the picture.</Alert>}

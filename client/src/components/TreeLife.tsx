@@ -3,7 +3,8 @@ import { Camera, Droplets, HeartHandshake, Scissors, Search, Shovel, Sprout, Tra
 import type { CareLog, Tree } from '../types';
 import { formatAge, formatDateTime, treeAge, useNow } from '../lib/age';
 import { CARE_LABEL, timeAgo, type CareAction } from '../lib/trees';
-import { fetchCareHistory, removeCarePhoto, replaceCarePhoto } from '../services/api';
+import { fetchCareHistory, removeCarePhoto } from '../services/api';
+import { replaceCarePhoto } from '../services/photoApi';
 import { careDue, dueText, everyText, type TaskKind } from '../lib/schedule';
 import { Button } from './ui/button';
 import { Alert } from './ui/alert';

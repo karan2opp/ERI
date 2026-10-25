@@ -7,6 +7,8 @@ import { isUuid } from '../../common/utils/validation';
 import { isAdminRole } from '../../common/auth/roles';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
+import { UploadError, claimUpload, discardOwnUpload, uploadRefSchema } from '../../common/services/uploads';
+import { sendUploadError } from '../../common/utils/uploadErrors';
 import { IMPACT_MAX, getSettings } from '../../common/services/settingsService';
 import { accessProblem } from './driveController';
 
@@ -119,40 +121,53 @@ export const getDrivePhotos = async (req: Request, res: Response) => {
   }
 };
 
-/** POST /drives/:id/photos (admin, multipart field "photo"): adds a picture, up to the limit set in Admin > Settings. */
+/**
+ * POST /drives/:id/photos { photo } (admin): adds a picture that was already uploaded straight to Cloudinary, up to
+ * the limit set in Admin > Settings.
+ */
 export const addDrivePhoto = async (req: Request, res: Response) => {
   const { id } = req.params;
   if (!isUuid(id)) return res.status(404).json({ success: false, error: 'Drive not found' });
-  if (!req.file) return res.status(400).json({ success: false, error: 'Choose a picture to add' });
+  const parsed = z.object({ photo: uploadRefSchema }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'Choose a picture to add' });
+  const userId = (req as AuthenticatedRequest).userId!;
+  const photoRef = parsed.data.photo;
 
   try {
     const [drive] = await db.select({ id: drives.id }).from(drives).where(eq(drives.id, id));
-    if (!drive) return res.status(404).json({ success: false, error: 'Drive not found' });
+    if (!drive) {
+      await discardOwnUpload(userId, photoRef.publicId);
+      return res.status(404).json({ success: false, error: 'Drive not found' });
+    }
 
     const { drivePhotoLimit: limit } = await getSettings();
     const full = `A drive can have up to ${limit} ${limit === 1 ? 'picture' : 'pictures'}. Remove one to add another.`;
     const [{ n: have }] = await db.select({ n: sql<number>`count(*)` }).from(drivePhotos).where(eq(drivePhotos.driveId, id));
-    if (Number(have) >= limit) return res.status(409).json({ success: false, error: full, limit });
-
-    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/drives');
+    if (Number(have) >= limit) {
+      await discardOwnUpload(userId, photoRef.publicId);
+      return res.status(409).json({ success: false, error: full, limit });
+    }
 
     // Counted again together with the insert, locking the drive, so a few uploads at once can't pass the limit
     const photo = await db.transaction(async (tx) => {
       await tx.select({ id: drives.id }).from(drives).where(eq(drives.id, id)).for('update');
       const [{ n }] = await tx.select({ n: sql<number>`count(*)` }).from(drivePhotos).where(eq(drivePhotos.driveId, id));
       if (Number(n) >= limit) return null;
+      const kept = await claimUpload(tx, userId, 'DRIVE', photoRef);
       const [row] = await tx
         .insert(drivePhotos)
-        .values({ driveId: id, url: upload.url, publicId: upload.publicId, uploadedBy: (req as AuthenticatedRequest).userId })
+        .values({ driveId: id, url: kept.url, publicId: kept.publicId, uploadedBy: userId })
         .returning({ id: drivePhotos.id, url: drivePhotos.url, createdAt: drivePhotos.createdAt });
       return row;
     });
     if (!photo) {
-      await CloudinaryService.deleteImage(upload.publicId);
+      await discardOwnUpload(userId, photoRef.publicId);
       return res.status(409).json({ success: false, error: full, limit });
     }
     res.status(201).json({ success: true, data: photo });
   } catch (err) {
+    await discardOwnUpload(userId, photoRef.publicId);
+    if (sendUploadError(res, err)) return;
     console.error('Error adding drive photo:', err);
     res.status(500).json({ success: false, error: 'Failed to add the picture' });
   }
@@ -173,29 +188,37 @@ export const deleteDrivePhoto = async (req: Request, res: Response) => {
   }
 };
 
-/** PUT /drives/:id/photos/:photoId (admin, multipart "photo"): swaps a picture for another one, keeping its place. */
+/** PUT /drives/:id/photos/:photoId { photo } (admin): swaps a picture for one already uploaded, keeping its place. */
 export const replaceDrivePhoto = async (req: Request, res: Response) => {
   const { id, photoId } = req.params;
   if (!isUuid(id) || !isUuid(photoId)) return res.status(404).json({ success: false, error: 'Picture not found' });
-  if (!req.file) return res.status(400).json({ success: false, error: 'Choose a picture to replace it with' });
+  const parsed = z.object({ photo: uploadRefSchema }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'Choose a picture to replace it with' });
+  const userId = (req as AuthenticatedRequest).userId!;
+  const photoRef = parsed.data.photo;
   try {
     const [old] = await db.select().from(drivePhotos).where(and(eq(drivePhotos.id, photoId), eq(drivePhotos.driveId, id)));
-    if (!old) return res.status(404).json({ success: false, error: 'Picture not found' });
-
-    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/drives');
-    const [photo] = await db
-      .update(drivePhotos)
-      .set({ url: upload.url, publicId: upload.publicId, uploadedBy: (req as AuthenticatedRequest).userId })
-      .where(and(eq(drivePhotos.id, photoId), eq(drivePhotos.driveId, id)))
-      .returning({ id: drivePhotos.id, url: drivePhotos.url, createdAt: drivePhotos.createdAt });
-    if (!photo) {
-      // Removed by someone else while this was uploading
-      await CloudinaryService.deleteImage(upload.publicId);
+    if (!old) {
+      await discardOwnUpload(userId, photoRef.publicId);
       return res.status(404).json({ success: false, error: 'Picture not found' });
     }
+
+    const photo = await db.transaction(async (tx) => {
+      const kept = await claimUpload(tx, userId, 'DRIVE', photoRef);
+      const [row] = await tx
+        .update(drivePhotos)
+        .set({ url: kept.url, publicId: kept.publicId, uploadedBy: userId })
+        .where(and(eq(drivePhotos.id, photoId), eq(drivePhotos.driveId, id)))
+        .returning({ id: drivePhotos.id, url: drivePhotos.url, createdAt: drivePhotos.createdAt });
+      // Removed by someone else in the meantime: undo (the upload is thrown away below)
+      if (!row) throw new UploadError(404, 'NOT_FOUND', 'Picture not found');
+      return row;
+    });
     await CloudinaryService.deleteImage(old.publicId ?? undefined);
     res.status(200).json({ success: true, data: photo });
   } catch (err) {
+    await discardOwnUpload(userId, photoRef.publicId);
+    if (sendUploadError(res, err)) return;
     console.error('Error replacing drive photo:', err);
     res.status(500).json({ success: false, error: 'Failed to replace the picture' });
   }

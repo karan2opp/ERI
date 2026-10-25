@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Tree, TreeCategory } from '../types';
 import { updateTree } from '../services/api';
+import { discardPhoto, uploadPhotos, type UploadedPhoto } from '../lib/uploadPhoto';
 import { Page } from '../components/ui/top-bar';
 import { Button } from '../components/ui/button';
 import { Field, Input, Textarea } from '../components/ui/field';
@@ -28,6 +29,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
     weed: String(tree.weedEveryDays),
   });
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const blocker = !name.trim()
@@ -44,24 +46,36 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
     if (blocker) return;
     setBusy(true);
     setError(null);
+    // A new photo goes straight to Cloudinary first (never through our server); the server then checks it there
+    let uploaded: UploadedPhoto | undefined;
     try {
-      const form = new FormData();
-      form.append('name', name.trim());
-      // Only sent when there's a category, so an old tree without one keeps its kind
-      if (category) form.append('categoryId', category.id);
-      form.append('address', address.trim());
-      form.append('description', description.trim());
-      form.append('healthScore', String(health));
-      if (plantedAt) form.append('plantedAt', plantedAt.toISOString());
-      form.append('waterEveryDays', String(parseDays(schedule.water)));
-      form.append('fertilizeEveryDays', String(parseDays(schedule.fertilize)));
-      form.append('weedEveryDays', String(parseDays(schedule.weed)));
-      if (photo) form.append('photo', photo);
-      onSaved(await updateTree(tree.id, form));
+      if (photo) {
+        setUploading(true);
+        [uploaded] = await uploadPhotos('TREE', [photo]);
+        setUploading(false);
+      }
+      onSaved(
+        await updateTree(tree.id, {
+          name: name.trim(),
+          // Only sent when there's a category, so an old tree without one keeps its kind
+          categoryId: category?.id,
+          address: address.trim(),
+          description: description.trim(),
+          healthScore: health,
+          plantedAt: plantedAt?.toISOString(),
+          waterEveryDays: parseDays(schedule.water)!,
+          fertilizeEveryDays: parseDays(schedule.fertilize)!,
+          weedEveryDays: parseDays(schedule.weed)!,
+          photo: uploaded,
+        })
+      );
     } catch (err) {
-      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      // Not saved, so the new photo isn't needed (the server may already have removed it)
+      if (uploaded) void discardPhoto(uploaded.publicId);
+      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? (err instanceof Error ? err.message : undefined);
       setError(message || "Couldn't save your changes. Try again.");
     } finally {
+      setUploading(false);
       setBusy(false);
     }
   };
@@ -73,7 +87,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       footer={
         <Button size="xl" className="w-full" onClick={submit} disabled={Boolean(blocker) || busy}>
           {busy && <Spinner />}
-          {blocker ?? 'Save changes'}
+          {blocker ?? (uploading ? 'Uploading your photo…' : 'Save changes')}
         </Button>
       }
     >

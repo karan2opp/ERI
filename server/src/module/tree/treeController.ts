@@ -2,13 +2,15 @@ import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
 import { trees, careLogs, users } from '../../common/db/schema';
-import { and, asc, desc, eq, gte, ilike, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { getAuth } from '@clerk/express';
 import { needsWater } from '../../common/utils/careSchedule';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
-import { verifyTreePhotoOnce } from '../../common/services/treeVerifier';
+import { verifyTreePhotoOnce, type TreeCheck } from '../../common/services/treeVerifier';
+import { claimUpload, discardUploads, inspectUpload, uploadRefSchema } from '../../common/services/uploads';
+import { sendUploadError } from '../../common/utils/uploadErrors';
 import { checkPlantingLocation } from '../../common/utils/treePolicy';
 import { findCategory } from '../category/categoryController';
 import { photoNeedsCheck } from '../../common/services/settingsService';
@@ -16,21 +18,26 @@ import { isAdminRole } from '../../common/auth/roles';
 import { notifyAdmins } from '../../common/services/inbox';
 
 /** The AI photo check, unless settings say this person's photos aren't checked (then it counts as a pass). */
-const checkPhoto = async (file: Express.Multer.File, role: string | undefined, userId: string) =>
-  (await photoNeedsCheck(role)) ? verifyTreePhotoOnce(file, userId) : { verdict: 'TRUE' as const, note: undefined };
+const checkPhoto = async (photo: { url: string; publicId: string }, role: string | undefined, userId: string): Promise<TreeCheck> =>
+  (await photoNeedsCheck(role)) ? verifyTreePhotoOnce(photo.url, photo.publicId, userId) : { verdict: 'TRUE' };
 
 /**
- * POST /trees/check-photo (a photo): the answer for a photo that has just been taken, so the person knows
- * before filling in the form. TRUE / FALSE / PENDING, or SKIPPED when this person's photos aren't checked.
+ * POST /trees/check-photo { photo: { publicId, version, signature } }: the answer for a photo that has just been
+ * uploaded to Cloudinary, so the person knows before filling in the form. TRUE / FALSE / PENDING, or SKIPPED when
+ * this person's photos aren't checked. A rejected (FALSE) photo is deleted from Cloudinary right here.
  * Planting still checks again on the server (reusing this answer), so this only informs: it can't be skipped.
  */
 export const checkTreePhoto = async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.file) return res.status(400).json({ success: false, error: 'Send a photo' });
+  const parsed = z.object({ photo: uploadRefSchema }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'Send the photo you uploaded' });
   try {
+    const photo = await inspectUpload(req.userId!, 'TREE', parsed.data.photo);
     if (!(await photoNeedsCheck(req.userRole))) return res.status(200).json({ success: true, verdict: 'SKIPPED' });
-    const check = await verifyTreePhotoOnce(req.file, req.userId!);
+    const check = await verifyTreePhotoOnce(photo.url, photo.publicId, req.userId!);
+    if (check.verdict === 'FALSE') await discardUploads([photo.publicId]);
     res.status(200).json({ success: true, verdict: check.verdict });
   } catch (err) {
+    if (sendUploadError(res, err)) return;
     console.error('Error checking a tree photo:', err);
     res.status(500).json({ success: false, error: 'Could not check the photo' });
   }
@@ -73,6 +80,8 @@ const createTreeSchema = z.object({
   deviceLatitude: latitudeSchema,
   deviceLongitude: longitudeSchema,
   deviceAccuracy: z.coerce.number().positive().max(100_000),
+  // The photo, already uploaded straight to Cloudinary (see common/services/uploads.ts)
+  photo: uploadRefSchema.optional(),
 });
 
 const updateTreeSchema = z.object({
@@ -85,6 +94,8 @@ const updateTreeSchema = z.object({
   waterEveryDays: intervalDays.optional(),
   fertilizeEveryDays: intervalDays.optional(),
   weedEveryDays: intervalDays.optional(),
+  // A new photo, already uploaded straight to Cloudinary
+  photo: uploadRefSchema.optional(),
 });
 
 const validationError = (error: z.ZodError) =>
@@ -175,13 +186,16 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(422).json({ success: false, code: 'TOO_FAR', error: tooFar });
     }
 
-    // 2. A photo is required, and it has to show a tree or plant
-    if (!req.file) {
+    // 2. A photo is required, and it has to show a tree or plant. It is already on Cloudinary: the check looks at it there.
+    const photoRef = parsed.data.photo;
+    if (!photoRef) {
       return res.status(400).json({ success: false, code: 'PHOTO_REQUIRED', error: 'Take a photo of the tree to register it' });
     }
-    const check = await checkPhoto(req.file, req.userRole, userId);
+    const photo = await inspectUpload(userId, 'TREE', photoRef);
+    const check = await checkPhoto(photo, req.userRole, userId);
     if (check.verdict === 'FALSE') {
-      // Nothing is saved or uploaded
+      // Nothing is saved, and the rejected photo is deleted from Cloudinary at once
+      await discardUploads([photo.publicId]);
       return res.status(422).json({
         success: false,
         code: 'NOT_A_TREE',
@@ -195,42 +209,50 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     // has no known watering yet, so it starts as "needs water" until someone logs one.
     const justPlanted = now.getTime() - plantedAt.getTime() < JUST_PLANTED_MS;
 
-    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
-    const photoUrl = upload.url;
-    const photoPublicId = upload.publicId;
+    let newTree;
+    try {
+      // The photo is claimed in the same transaction as the tree: both are saved, or neither
+      newTree = await db.transaction(async (tx) => {
+        const kept = await claimUpload(tx, userId, 'TREE', photoRef);
+        const [row] = await tx.insert(trees).values({
+          name,
+          species,
+          categoryId: category.id,
+          description: description || '',
+          photoUrl: kept.url,
+          photoPublicId: kept.publicId,
+          latitude,
+          longitude,
+          address: address || '',
+          userId,
+          plantedAt,
+          waterEveryDays: parsed.data.waterEveryDays,
+          fertilizeEveryDays: parsed.data.fertilizeEveryDays,
+          weedEveryDays: parsed.data.weedEveryDays,
+          lastWateredAt: justPlanted ? plantedAt : null,
+          lastCaredAt: justPlanted ? plantedAt : now,
+          healthScore: 100,
+          // TRUE goes straight on the map; PENDING waits for an admin to look at the photo
+          verificationStatus: check.verdict === 'TRUE' ? 'VERIFIED' : 'PENDING',
+          verificationNote: check.verdict === 'TRUE' ? null : check.note ?? null
+        }).returning();
 
-    const [newTree] = await db.insert(trees).values({
-      name,
-      species,
-      categoryId: category.id,
-      description: description || '',
-      photoUrl,
-      photoPublicId,
-      latitude,
-      longitude,
-      address: address || '',
-      userId,
-      plantedAt,
-      waterEveryDays: parsed.data.waterEveryDays,
-      fertilizeEveryDays: parsed.data.fertilizeEveryDays,
-      weedEveryDays: parsed.data.weedEveryDays,
-      lastWateredAt: justPlanted ? plantedAt : null,
-      lastCaredAt: justPlanted ? plantedAt : now,
-      healthScore: 100,
-      // TRUE goes straight on the map; PENDING waits for an admin to look at the photo
-      verificationStatus: check.verdict === 'TRUE' ? 'VERIFIED' : 'PENDING',
-      verificationNote: check.verdict === 'TRUE' ? null : check.note ?? null
-    }).returning();
-
-    await db.insert(careLogs).values({
-      treeId: newTree.id,
-      actionType: justPlanted ? 'WATERED' : 'INSPECTED',
-      notes: justPlanted ? 'Planted and watered' : 'Added to the map',
-      photoUrl: newTree.photoUrl,
-      photoPublicId: newTree.photoPublicId,
-      userId,
-      performedAt: justPlanted ? plantedAt : now
-    });
+        await tx.insert(careLogs).values({
+          treeId: row.id,
+          actionType: justPlanted ? 'WATERED' : 'INSPECTED',
+          notes: justPlanted ? 'Planted and watered' : 'Added to the map',
+          photoUrl: row.photoUrl,
+          photoPublicId: row.photoPublicId,
+          userId,
+          performedAt: justPlanted ? plantedAt : now
+        });
+        return row;
+      });
+    } catch (err) {
+      // The tree was not saved, so the photo is not needed (it is only deleted if nothing is keeping it)
+      await discardUploads([photo.publicId]);
+      throw err;
+    }
 
     // Tell the admins (in the background): a verified tree opens on the map, one waiting for review opens Review
     const pending = newTree.verificationStatus === 'PENDING';
@@ -250,6 +272,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
       data: newTree
     });
   } catch (error) {
+    if (sendUploadError(res, error)) return;
     console.error('Error creating tree:', error);
     return res.status(500).json({
       success: false,
@@ -304,9 +327,13 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
     // A new photo has to pass the same check: a tree can't be swapped to a photo of something else
     let verificationStatus = existingTree.verificationStatus;
     let verificationNote = existingTree.verificationNote;
-    if (req.file) {
-      const check = await checkPhoto(req.file, req.userRole, userId);
+    const photoRef = parsed.data.photo;
+    let newPhoto: { url: string; publicId: string } | null = null;
+    if (photoRef) {
+      newPhoto = await inspectUpload(userId, 'TREE', photoRef);
+      const check = await checkPhoto(newPhoto, req.userRole, userId);
       if (check.verdict === 'FALSE') {
+        await discardUploads([newPhoto.publicId]);
         return res.status(422).json({
           success: false,
           code: 'NOT_A_TREE',
@@ -315,38 +342,49 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
       }
       verificationStatus = check.verdict === 'TRUE' ? 'VERIFIED' : 'PENDING';
       verificationNote = check.verdict === 'TRUE' ? null : check.note ?? null;
-
-      const upload = await CloudinaryService.uploadImage(req.file, 'plantree/trees');
-      photoUrl = upload.url;
-
-      if (existingTree.photoPublicId) {
-        await CloudinaryService.deleteImage(existingTree.photoPublicId);
-        // The planting entry in the care history shows that same picture: it goes too, so it isn't left broken
-        await db.update(careLogs).set({ photoUrl: null, photoPublicId: null }).where(and(eq(careLogs.treeId, id), eq(careLogs.photoPublicId, existingTree.photoPublicId)));
-      }
-      photoPublicId = upload.publicId;
     }
 
-    const [updatedTree] = await db.update(trees)
-      .set({
-        name: name !== undefined ? name : existingTree.name,
-        species: category ? category.name : existingTree.species,
-        categoryId: category ? category.id : existingTree.categoryId,
-        description: description !== undefined ? description : existingTree.description,
-        address: address !== undefined ? address : existingTree.address,
-        healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
-        plantedAt: plantedAt ?? existingTree.plantedAt,
-        waterEveryDays: parsed.data.waterEveryDays ?? existingTree.waterEveryDays,
-        fertilizeEveryDays: parsed.data.fertilizeEveryDays ?? existingTree.fertilizeEveryDays,
-        weedEveryDays: parsed.data.weedEveryDays ?? existingTree.weedEveryDays,
-        photoUrl,
-        photoPublicId,
-        verificationStatus,
-        verificationNote,
-        updatedAt: new Date()
-      })
-      .where(eq(trees.id, id))
-      .returning();
+    let updatedTree;
+    try {
+      updatedTree = await db.transaction(async (tx) => {
+        if (photoRef) {
+          const kept = await claimUpload(tx, userId, 'TREE', photoRef);
+          photoUrl = kept.url;
+          photoPublicId = kept.publicId;
+          if (existingTree.photoPublicId) {
+            // The planting entry in the care history shows the old picture: it goes too, so it isn't left broken
+            await tx.update(careLogs).set({ photoUrl: null, photoPublicId: null }).where(and(eq(careLogs.treeId, id), eq(careLogs.photoPublicId, existingTree.photoPublicId)));
+          }
+        }
+        const [row] = await tx.update(trees)
+          .set({
+            name: name !== undefined ? name : existingTree.name,
+            species: category ? category.name : existingTree.species,
+            categoryId: category ? category.id : existingTree.categoryId,
+            description: description !== undefined ? description : existingTree.description,
+            address: address !== undefined ? address : existingTree.address,
+            healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
+            plantedAt: plantedAt ?? existingTree.plantedAt,
+            waterEveryDays: parsed.data.waterEveryDays ?? existingTree.waterEveryDays,
+            fertilizeEveryDays: parsed.data.fertilizeEveryDays ?? existingTree.fertilizeEveryDays,
+            weedEveryDays: parsed.data.weedEveryDays ?? existingTree.weedEveryDays,
+            photoUrl,
+            photoPublicId,
+            verificationStatus,
+            verificationNote,
+            updatedAt: new Date()
+          })
+          .where(eq(trees.id, id))
+          .returning();
+        return row;
+      });
+    } catch (err) {
+      if (newPhoto) await discardUploads([newPhoto.publicId]);
+      throw err;
+    }
+
+    // Only once the tree points at the new photo is the old one removed from Cloudinary
+    if (newPhoto && existingTree.photoPublicId) await CloudinaryService.deleteImage(existingTree.photoPublicId);
 
     return res.status(200).json({
       success: true,
@@ -354,6 +392,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
       data: updatedTree
     });
   } catch (error) {
+    if (sendUploadError(res, error)) return;
     console.error('Error updating tree:', error);
     return res.status(500).json({
       success: false,
@@ -387,11 +426,16 @@ export const deleteTree = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    if (existingTree.photoPublicId) {
-      await CloudinaryService.deleteImage(existingTree.photoPublicId);
-    }
+    // The care history goes with the tree, so its pictures must not be left behind on Cloudinary
+    const careImages = await db
+      .select({ publicId: careLogs.photoPublicId })
+      .from(careLogs)
+      .where(and(eq(careLogs.treeId, id), isNotNull(careLogs.photoPublicId)));
 
     await db.delete(trees).where(eq(trees.id, id));
+
+    const images = new Set([existingTree.photoPublicId, ...careImages.map((c) => c.publicId)].filter((x): x is string => Boolean(x)));
+    await Promise.all([...images].map((publicId) => CloudinaryService.deleteImage(publicId)));
 
     return res.status(200).json({
       success: true,

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ImagePlus } from 'lucide-react';
 import type { Drive } from '../types';
-import { addDrivePhoto, completeDrive, fetchAppSettings, reopenDrive, updateDrive } from '../services/api';
+import { completeDrive, fetchAppSettings, reopenDrive, updateDrive } from '../services/api';
+import { addDrivePhoto } from '../services/photoApi';
 import { Alert } from './ui/alert';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ui/confirm-dialog';

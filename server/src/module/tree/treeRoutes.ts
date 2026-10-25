@@ -17,7 +17,6 @@ import {
 } from '../care/careController';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { photoNeedsCheck } from '../../common/services/settingsService';
-import { uploadSingleImage } from '../../common/middlewares/uploadMiddleware';
 
 const router = Router();
 
@@ -46,14 +45,14 @@ router.get('/:id', optionalAuth, getTreeById);
 router.get('/:treeId/care', getTreeCareHistory);
 
 // Authenticated Routes
-// Checks a photo the moment it is taken
-router.post('/check-photo', requireAuth, photoChecksLimiter, uploadSingleImage, checkTreePhoto);
-router.post('/', requireAuth, photoChecksLimiter, uploadSingleImage, createTree);
-router.put('/:id', requireAuth, photoChecksLimiter, uploadSingleImage, updateTree);
+// Checks a photo the moment it has been uploaded (photos go straight from the phone to Cloudinary, never through this server)
+router.post('/check-photo', requireAuth, photoChecksLimiter, checkTreePhoto);
+router.post('/', requireAuth, photoChecksLimiter, createTree);
+router.put('/:id', requireAuth, photoChecksLimiter, updateTree);
 router.delete('/:id', requireAuth, deleteTree);
-router.post('/:treeId/care', requireAuth, uploadSingleImage, addCareLog);
+router.post('/:treeId/care', requireAuth, addCareLog);
 // Changing the photo of a care entry: the tree's owner or an admin (checked in the controller)
-router.put('/:treeId/care/:logId/photo', requireAuth, uploadSingleImage, replaceCarePhoto);
+router.put('/:treeId/care/:logId/photo', requireAuth, replaceCarePhoto);
 router.delete('/:treeId/care/:logId/photo', requireAuth, removeCarePhoto);
 
 export default router;

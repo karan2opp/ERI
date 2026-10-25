@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
 import OpenAI from 'openai';
 import { env } from '../config/env';
+import { createLimiter } from '../utils/limitConcurrency';
 
 /**
  * What the photo check decides, and nothing else:
@@ -39,12 +39,20 @@ const SCHEMA = {
 let client: OpenAI | null = null;
 const getClient = () => (client ??= new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 20_000, maxRetries: 1 }));
 
+// Only a few checks run at once and a few more wait, so a rush of people planting together can't overload a small server
+const checkLine = createLimiter(4, 40);
+
 /**
- * Asks OpenAI whether a photo is a tree or plant. It never approves by accident: with no API key,
+ * Asks OpenAI whether a photo is a tree or plant. OpenAI fetches the photo from its address (it is already on
+ * Cloudinary), so this server never handles the photo itself. It never approves by accident: with no API key,
  * a timeout, an API error or an answer that isn't one of the three allowed words, the result is
- * PENDING so a person decides.
+ * PENDING so a person decides. Throws BusyError when too many checks are already waiting.
  */
-export async function verifyTreePhoto(file: Pick<Express.Multer.File, 'buffer' | 'mimetype'>): Promise<TreeCheck> {
+export function verifyTreePhoto(imageUrl: string): Promise<TreeCheck> {
+  return checkLine.run(() => askOpenAI(imageUrl));
+}
+
+async function askOpenAI(imageUrl: string): Promise<TreeCheck> {
   if (!env.OPENAI_API_KEY) {
     console.warn('OPENAI_API_KEY is not set: tree photos are sent to manual review.');
     return { verdict: 'PENDING', note: 'Automatic photo check is not set up', failed: true };
@@ -62,7 +70,7 @@ export async function verifyTreePhoto(file: Pick<Express.Multer.File, 'buffer' |
           role: 'user',
           content: [
             { type: 'text', text: 'Is this a tree or plant?' },
-            { type: 'image_url', image_url: { url: `data:${file.mimetype};base64,${file.buffer.toString('base64')}`, detail: 'low' } },
+            { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
           ],
         },
       ],
@@ -85,17 +93,18 @@ const REMEMBER_MS = 15 * 60 * 1000;
 const MAX_REMEMBERED = 500;
 const remembered = new Map<string, { at: number; check: TreeCheck }>();
 
-export async function verifyTreePhotoOnce(file: Pick<Express.Multer.File, 'buffer' | 'mimetype'>, userId: string): Promise<TreeCheck> {
+/** `photoId` is the photo's Cloudinary id: the same id from the same person is only checked once. */
+export async function verifyTreePhotoOnce(imageUrl: string, photoId: string, userId: string): Promise<TreeCheck> {
   const now = Date.now();
   for (const [key, entry] of remembered) {
     if (now - entry.at > REMEMBER_MS || remembered.size > MAX_REMEMBERED) remembered.delete(key);
     else break; // entries are in the order they were added, so the rest are newer
   }
-  const key = `${userId}:${createHash('sha256').update(file.buffer).digest('hex')}`;
+  const key = `${userId}:${photoId}`;
   const hit = remembered.get(key);
   if (hit) return hit.check;
 
-  const check = await verifyTreePhoto(file);
+  const check = await verifyTreePhoto(imageUrl);
   if (!check.failed) remembered.set(key, { at: now, check });
   return check;
 }

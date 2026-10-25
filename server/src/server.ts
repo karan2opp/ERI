@@ -25,6 +25,8 @@ import { ensureBaselineNumbers } from './common/services/settingsService';
 import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
 import placeRoutes from './module/place/placeRoutes';
+import uploadRoutes from './module/upload/uploadRoutes';
+import { startUploadSweeper } from './common/services/uploadSweeper';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10) || 5000;
@@ -76,6 +78,7 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/site', siteRoutes);
 app.use('/api/v1/place-forms', placeRoutes);
+app.use('/api/v1/uploads', uploadRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);
@@ -112,6 +115,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   void ensureDefaultCategories();
   // The home page's starting numbers (once; admins change them in Settings)
   void ensureBaselineNumbers();
+  // Photos uploaded but never used are removed once a day (see common/services/uploadSweeper.ts)
+  startUploadSweeper();
 });
 
 const io = new Server(server, {

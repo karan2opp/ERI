@@ -2,7 +2,6 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createPlaceForm, createSuggestion, deletePlaceForm, deleteSuggestion, getPlaceForm, listPlaceForms, listSuggestions, updatePlaceForm } from './placeController';
 import { optionalAuth, requireAdmin, requireAuth, type AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
-import { uploadPhotos } from '../../common/middlewares/uploadMiddleware';
 
 const router = Router();
 
@@ -28,7 +27,7 @@ router.patch('/:id', requireAuth, requireAdmin, updatePlaceForm);
 router.delete('/:id', requireAuth, requireAdmin, deletePlaceForm);
 
 // Signed-in people send places; only admins see them
-router.post('/:id/suggestions', requireAuth, suggestLimiter, uploadPhotos, createSuggestion);
+router.post('/:id/suggestions', requireAuth, suggestLimiter, createSuggestion);
 router.get('/:id/suggestions', requireAuth, requireAdmin, listSuggestions);
 router.delete('/:id/suggestions/:suggestionId', requireAuth, requireAdmin, deleteSuggestion);
 

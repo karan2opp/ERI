@@ -112,7 +112,10 @@ export const careLogs = pgTable('care_logs', {
   photoPublicId: varchar('photo_public_id', { length: 255 }),
   userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
   performedAt: timestamp('performed_at').defaultNow().notNull(),
-});
+}, (t) => [
+  // A tree's care history (newest first) and the cascade when a tree is deleted
+  index('care_logs_tree_idx').on(t.treeId, t.performedAt),
+]);
 
 // Drizzle Relations
 export const usersRelations = relations(users, ({ many }) => ({
@@ -245,6 +248,22 @@ export const placeSuggestions = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (t) => [index('place_suggestions_form_created_idx').on(t.formId, t.createdAt)]
+);
+
+// A photo slot handed out to someone who is about to upload straight to Cloudinary. The slot is used up when the photo
+// is attached to a tree, care entry, drive or place, so a photo can only be used once and only by the person it was
+// issued to. Slots nobody used (and the photos uploaded into them) are removed by common/services/uploadSweeper.ts.
+export const uploadTickets = pgTable(
+  'upload_tickets',
+  {
+    // The photo's full Cloudinary id, chosen by the server: plantree/<kind>/<user id>/<random>
+    publicId: varchar('public_id', { length: 255 }).primaryKey(),
+    userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // TREE, CARE, DRIVE or PLACE
+    kind: varchar('kind', { length: 10 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [index('upload_tickets_user_idx').on(t.userId), index('upload_tickets_created_idx').on(t.createdAt)]
 );
 
 export type User = typeof users.$inferSelect;

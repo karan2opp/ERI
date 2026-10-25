@@ -4,7 +4,8 @@ import { Camera, Droplets, Navigation, Pencil, Radio, Trash2, X } from 'lucide-r
 import type { LatLng, Role, Tree } from '../../types';
 import { careLock } from '../../lib/schedule';
 import { isAdminRole } from '../../lib/roles';
-import { deleteTree, logCareActivity } from '../../services/api';
+import { deleteTree } from '../../services/api';
+import { logCareActivity } from '../../services/photoApi';
 import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { Badge } from '../ui/badge';
@@ -74,11 +75,7 @@ const CareForm: React.FC<{ tree: Tree; role: Role; onDone: (outcome: Outcome) =>
     e.preventDefault();
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append('actionType', action);
-      if (notes.trim()) form.append('notes', notes.trim());
-      if (photo) form.append('photo', photo);
-      await logCareActivity(tree.id, form);
+      await logCareActivity(tree.id, { actionType: action, notes: notes.trim() || undefined, photo: photo ?? undefined });
       onDone({ tone: 'success', text: `${CARE_LABEL[action]}. Thanks for looking after ${tree.name}.` });
     } catch (err) {
       onDone({ tone: 'error', text: errorText(err, "Couldn't save that. Check your connection and try again.") });
@@ -188,9 +185,7 @@ export const TreeDetails: React.FC<{
   const quickWater = async () => {
     setWatering(true);
     try {
-      const form = new FormData();
-      form.append('actionType', 'WATERED');
-      await logCareActivity(tree.id, form);
+      await logCareActivity(tree.id, { actionType: 'WATERED' });
       careDone({ tone: 'success', text: `Watered. Thanks for looking after ${tree.name}.` });
     } catch (err) {
       setOutcome({ tone: 'error', text: errorText(err, "Couldn't save that. Try again.") });

@@ -5,6 +5,7 @@ import type { LatLng } from '../types';
 import { sendPlaceSuggestion, type PlaceForm, type PlaceKind } from '../services/api';
 import { geocodeLocation } from '../utils/geo';
 import { shrinkImage } from '../lib/shrinkImage';
+import { discardPhoto, uploadPhotos, type UploadedPhoto } from '../lib/uploadPhoto';
 import { Button } from './ui/button';
 import { Chips } from './ui/chips';
 import { Field, Input, Textarea } from './ui/field';
@@ -16,7 +17,8 @@ import { MiniMap } from './MiniMap';
 const FALLBACK_CENTER: LatLng = { lat: 19.076, lng: 72.8777 };
 export const MAX_PLACE_PHOTOS = 5;
 
-type Photo = { file: File; preview: string };
+// `uploaded` is set once the picture is on Cloudinary, so sending again after a problem doesn't upload it twice
+type Photo = { file: File; preview: string; uploaded?: UploadedPhoto };
 
 const moved = (a: LatLng, b: LatLng) => Math.abs(a.lat - b.lat) > 1e-6 || Math.abs(a.lng - b.lng) > 1e-6;
 
@@ -40,6 +42,8 @@ export const PlaceSuggestForm: React.FC<{ form: PlaceForm; you: LatLng | null; o
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [preparing, setPreparing] = useState(false);
   const [busy, setBusy] = useState(false);
+  // What is happening while sending (uploading the pictures, then the place)
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -76,6 +80,7 @@ export const PlaceSuggestForm: React.FC<{ form: PlaceForm; you: LatLng | null; o
 
   const removePhoto = (photo: Photo) => {
     URL.revokeObjectURL(photo.preview);
+    if (photo.uploaded) void discardPhoto(photo.uploaded.publicId);
     setPhotos((list) => list.filter((p) => p !== photo));
   };
 
@@ -97,19 +102,33 @@ export const PlaceSuggestForm: React.FC<{ form: PlaceForm; you: LatLng | null; o
     setBusy(true);
     setError(null);
     try {
+      // The pictures go straight to Cloudinary first (never through our server); only then is the place sent
+      let ready = photos;
+      const waiting = photos.filter((p) => !p.uploaded);
+      if (waiting.length > 0) {
+        setStage(`Uploading ${waiting.length === 1 ? 'your picture' : `${waiting.length} pictures`}…`);
+        const refs = await uploadPhotos('PLACE', waiting.map((p) => p.file));
+        let next = 0;
+        ready = photos.map((p) => (p.uploaded ? p : { ...p, uploaded: refs[next++] }));
+        setPhotos(ready);
+      }
+      setStage('Sending…');
       await sendPlaceSuggestion(form.id, {
         kind: form.kind === 'EITHER' ? kind : undefined,
         pin: pinPlaced ? center : null,
         googleMapsUrl: link,
         landmark: landmark.trim(),
         answers: answers.map((a) => a.trim()),
-        photos: photos.map((p) => p.file),
+        photos: ready.map((p) => p.uploaded!),
       });
       onSent();
     } catch (err) {
-      const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(message || "Couldn't send the place. Check your connection and try again.");
+      const res = (err as { response?: { data?: { error?: string } } })?.response;
+      // When the server answered, it has thrown the uploaded pictures away: they are sent again next time
+      if (res) setPhotos((list) => list.map((p) => ({ ...p, uploaded: undefined })));
+      setError(res?.data?.error || (err instanceof Error ? err.message : undefined) || "Couldn't send the place. Check your connection and try again.");
     } finally {
+      setStage(null);
       setBusy(false);
     }
   };
@@ -228,7 +247,7 @@ export const PlaceSuggestForm: React.FC<{ form: PlaceForm; you: LatLng | null; o
       {isSignedIn ? (
         <Button size="xl" onClick={submit} disabled={Boolean(blocker) || busy || preparing}>
           {busy && <Spinner />}
-          {busy ? 'Sending…' : (blocker ?? 'Send this place')}
+          {busy ? (stage ?? 'Sending…') : (blocker ?? 'Send this place')}
         </Button>
       ) : (
         <SignInButton mode="modal">

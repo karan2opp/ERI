@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Droplets, Pencil, Plus, Search } from 'lucide-react';
 import type { LatLng, Role, Tree } from '../types';
 import { careLock } from '../lib/schedule';
-import { browseTrees, logCareActivity, type Paged, type TreeSort } from '../services/api';
+import { browseTrees, type Paged, type TreeSort } from '../services/api';
+import { logCareActivity } from '../services/photoApi';
 import { STATUS_LABEL, isPending, timeAgo, treeStatus } from '../lib/trees';
 import { formatAgeShort, treeAge } from '../lib/age';
 import { formatDistance } from '../utils/geo';
@@ -95,9 +96,7 @@ export const MyTreesPage: React.FC<{
     setWatering(tree.id);
     setNotice(null);
     try {
-      const form = new FormData();
-      form.append('actionType', 'WATERED');
-      await logCareActivity(tree.id, form);
+      await logCareActivity(tree.id, { actionType: 'WATERED' });
       setNotice({ tone: 'success', text: `${tree.name} watered.` });
       setVersion((v) => v + 1);
       onChanged();

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { Tree, CareLog, User, Drive, DrivePhoto, Role, DriveType, DriveVisibility, TreeCategory } from '../types';
+import type { UploadedPhoto } from '../lib/uploadPhoto';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
@@ -114,25 +115,55 @@ export const deleteCategory = async (id: string): Promise<{ treesKept: number }>
 /** What the AI photo check says about a photo: a tree or plant, not one, not sure, or not checked for this person. */
 export type PhotoVerdict = 'TRUE' | 'FALSE' | 'PENDING' | 'SKIPPED';
 
-/** Checks a photo right after it is taken (planting checks it again on the server, reusing this answer). */
-export const checkTreePhoto = async (photo: File): Promise<PhotoVerdict> => {
-  const form = new FormData();
-  form.append('photo', photo);
-  const res = await api.post('/trees/check-photo', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 45_000 });
+/**
+ * Checks a photo right after it was uploaded to Cloudinary (planting checks again on the server, reusing this
+ * answer). A photo that is rejected (FALSE) is deleted on the server at once.
+ */
+export const checkTreePhoto = async (photo: UploadedPhoto): Promise<PhotoVerdict> => {
+  const res = await api.post('/trees/check-photo', { photo }, { timeout: 45_000 });
   return res.data.verdict;
 };
 
-export const createTree = async (formData: FormData): Promise<Tree> => {
-  const res = await api.post('/trees', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+/** What the server needs to plant a tree: the fields below, and the photo as Cloudinary replied after the upload. */
+export interface NewTreeInput {
+  name: string;
+  categoryId: string;
+  description: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  deviceLatitude: number;
+  deviceLongitude: number;
+  deviceAccuracy: number;
+  plantedAt?: string;
+  waterEveryDays: number;
+  fertilizeEveryDays: number;
+  weedEveryDays: number;
+  photo: UploadedPhoto;
+}
+
+export const createTree = async (input: NewTreeInput): Promise<Tree> => {
+  // The photo check can take a while when OpenAI is slow
+  const res = await api.post('/trees', input, { timeout: 70_000 });
   return res.data.data;
 };
 
-export const updateTree = async (id: string, formData: FormData): Promise<Tree> => {
-  const res = await api.put(`/trees/${id}`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+/** Changes to a tree. `photo` is a new photo already uploaded to Cloudinary. */
+export interface TreeChanges {
+  name: string;
+  categoryId?: string;
+  address: string;
+  description: string;
+  healthScore: number;
+  plantedAt?: string;
+  waterEveryDays: number;
+  fertilizeEveryDays: number;
+  weedEveryDays: number;
+  photo?: UploadedPhoto;
+}
+
+export const updateTree = async (id: string, changes: TreeChanges): Promise<Tree> => {
+  const res = await api.put(`/trees/${id}`, changes, { timeout: 70_000 });
   return res.data.data;
 };
 
@@ -140,24 +171,9 @@ export const deleteTree = async (id: string): Promise<void> => {
   await api.delete(`/trees/${id}`);
 };
 
-/** The tree's owner or an admin: swaps the photo of a care entry for a new one. */
-export const replaceCarePhoto = async (treeId: string, logId: string, photo: File): Promise<CareLog> => {
-  const form = new FormData();
-  form.append('photo', photo);
-  const res = await api.put(`/trees/${treeId}/care/${logId}/photo`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
-  return res.data.data;
-};
-
 /** The tree's owner or an admin: removes the photo from a care entry (the entry stays). */
 export const removeCarePhoto = async (treeId: string, logId: string): Promise<void> => {
   await api.delete(`/trees/${treeId}/care/${logId}/photo`);
-};
-
-export const logCareActivity = async (treeId: string, formData: FormData): Promise<CareLog> => {
-  const res = await api.post(`/trees/${treeId}/care`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  return res.data.data;
 };
 
 export interface Paged<T> {
@@ -433,21 +449,6 @@ export const fetchDrivePhotos = async (driveId: string, page: number, limit = 10
 };
 
 /** Admin: adds one picture (the server refuses past the limit set in Settings). */
-export const addDrivePhoto = async (driveId: string, file: File): Promise<DrivePhoto> => {
-  const form = new FormData();
-  form.append('photo', file);
-  const res = await api.post(`/drives/${driveId}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
-  return res.data.data;
-};
-
-/** Admin: swaps one picture for another, keeping its place. */
-export const replaceDrivePhoto = async (driveId: string, photoId: string, file: File): Promise<DrivePhoto> => {
-  const form = new FormData();
-  form.append('photo', file);
-  const res = await api.put(`/drives/${driveId}/photos/${photoId}`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60_000 });
-  return res.data.data;
-};
-
 export const removeDrivePhoto = async (driveId: string, photoId: string): Promise<void> => {
   await api.delete(`/drives/${driveId}/photos/${photoId}`);
 };
@@ -679,19 +680,21 @@ export const deletePlaceForm = async (id: string): Promise<void> => {
 /** Sends a place: the pin and/or a Google Maps link, a landmark, the answers and up to 5 pictures. */
 export const sendPlaceSuggestion = async (
   formId: string,
-  place: { kind?: PlaceKind; pin: LatLngLike | null; googleMapsUrl: string; landmark: string; answers: string[]; photos: File[] }
+  place: { kind?: PlaceKind; pin: LatLngLike | null; googleMapsUrl: string; landmark: string; answers: string[]; photos: UploadedPhoto[] }
 ): Promise<void> => {
-  const body = new FormData();
-  if (place.kind) body.append('kind', place.kind);
-  if (place.pin) {
-    body.append('latitude', String(place.pin.lat));
-    body.append('longitude', String(place.pin.lng));
-  }
-  if (place.googleMapsUrl) body.append('googleMapsUrl', place.googleMapsUrl);
-  body.append('landmark', place.landmark);
-  body.append('answers', JSON.stringify(place.answers));
-  for (const photo of place.photos) body.append('photos', photo);
-  await api.post(`/place-forms/${formId}/suggestions`, body);
+  await api.post(
+    `/place-forms/${formId}/suggestions`,
+    {
+      kind: place.kind,
+      latitude: place.pin?.lat,
+      longitude: place.pin?.lng,
+      googleMapsUrl: place.googleMapsUrl || undefined,
+      landmark: place.landmark,
+      answers: place.answers,
+      photos: place.photos,
+    },
+    { timeout: 60_000 }
+  );
 };
 type LatLngLike = { lat: number; lng: number };
 

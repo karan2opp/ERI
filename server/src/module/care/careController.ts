@@ -3,7 +3,10 @@ import { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 import { db } from '../../common/db';
 import { trees, careLogs } from '../../common/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
+import { claimUpload, discardOwnUpload, uploadRefSchema, type UploadRef } from '../../common/services/uploads';
+import { sendUploadError } from '../../common/utils/uploadErrors';
 import { ACTION_NOUN, careOpensAt, isScheduledAction, waitText } from '../../common/utils/careWindow';
 import { isAdminRole } from '../../common/auth/roles';
 import { isUuid } from '../../common/utils/validation';
@@ -12,31 +15,43 @@ import { isUuid } from '../../common/utils/validation';
 // so repeated logging can't pump the score.
 const HEALTH_BONUS_COOLDOWN_MS = 60 * 60 * 1000;
 
+/**
+ * POST /trees/:treeId/care { actionType?, notes?, photo? }: logs care. The photo is optional and already on
+ * Cloudinary (uploaded straight from the phone); it is attached in the same transaction as the entry.
+ */
 export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
+  // Set once the photo's reply has been read, so a failure can throw the unused upload away
+  let photoRef: UploadRef | undefined;
+  const userId = req.userId!;
   try {
-    const userId = req.userId!;
     const { treeId } = req.params;
-    const { actionType, notes } = req.body;
+    const { actionType, notes } = req.body ?? {};
+    const photoParsed = uploadRefSchema.optional().safeParse(req.body?.photo);
+    if (!photoParsed.success) return res.status(400).json({ success: false, error: 'The photo could not be read. Take it again.' });
+    photoRef = photoParsed.data;
+
+    // Anything refused below leaves the upload unused: it is thrown away (and the daily clean-up catches any miss)
+    const refuse = async (status: number, body: object) => {
+      if (photoRef) await discardOwnUpload(userId, photoRef.publicId);
+      return res.status(status).json(body);
+    };
 
     if (!isUuid(treeId)) {
-      return res.status(404).json({ success: false, error: 'Tree not found' });
+      return refuse(404, { success: false, error: 'Tree not found' });
     }
 
     if (notes !== undefined && (typeof notes !== 'string' || notes.length > 2000)) {
-      return res.status(400).json({ success: false, error: 'notes must be a string of at most 2000 characters' });
+      return refuse(400, { success: false, error: 'notes must be a string of at most 2000 characters' });
     }
 
     const [tree] = await db.select().from(trees).where(eq(trees.id, treeId));
 
     if (!tree) {
-      return res.status(404).json({
-        success: false,
-        error: 'Tree not found'
-      });
+      return refuse(404, { success: false, error: 'Tree not found' });
     }
 
     if (tree.verificationStatus !== 'VERIFIED') {
-      return res.status(409).json({ success: false, error: 'This tree is waiting for its photo to be checked. You can log care once it is approved.' });
+      return refuse(409, { success: false, error: 'This tree is waiting for its photo to be checked. You can log care once it is approved.' });
     }
 
     const validActionType = typeof actionType === 'string' && ['WATERED', 'FERTILIZED', 'PRUNED', 'INSPECTED', 'WEEDED'].includes(actionType.toUpperCase())
@@ -59,16 +74,7 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       };
     };
     const early = tooSoon(tree);
-    if (early) return res.status(409).json(early);
-
-    let photoUrl: string | undefined;
-    let photoPublicId: string | undefined;
-
-    if (req.file) {
-      const upload = await CloudinaryService.uploadImage(req.file, 'plantree/care_updates');
-      photoUrl = upload.url;
-      photoPublicId = upload.publicId;
-    }
+    if (early) return refuse(409, early);
 
     const now = new Date();
 
@@ -79,12 +85,13 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       const blocked = tooSoon(fresh);
       if (blocked) return { blocked };
 
+      const kept = photoRef ? await claimUpload(tx, userId, 'CARE', photoRef) : null;
       const [newLog] = await tx.insert(careLogs).values({
         treeId,
         actionType: validActionType,
         notes: notes?.trim() || null,
-        photoUrl,
-        photoPublicId,
+        photoUrl: kept?.url,
+        photoPublicId: kept?.publicId,
         userId,
         performedAt: now
       }).returning();
@@ -108,10 +115,13 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       return { newLog };
     });
 
-    if ('notFound' in result) return res.status(404).json({ success: false, error: 'Tree not found' });
+    if ('notFound' in result) {
+      if (photoRef) await discardOwnUpload(userId, photoRef.publicId);
+      return res.status(404).json({ success: false, error: 'Tree not found' });
+    }
     if ('blocked' in result && result.blocked) {
-      // Someone logged it a moment ago: the photo we just uploaded isn't needed
-      if (photoPublicId) await CloudinaryService.deleteImage(photoPublicId);
+      // Someone logged it a moment ago: the photo that was uploaded isn't needed
+      if (photoRef) await discardOwnUpload(userId, photoRef.publicId);
       return res.status(409).json(result.blocked);
     }
 
@@ -121,6 +131,9 @@ export const addCareLog = async (req: AuthenticatedRequest, res: Response) => {
       data: (result as { newLog: unknown }).newLog
     });
   } catch (error) {
+    // The entry was not saved, so an uploaded photo is not needed (only the person's own unused upload is touched)
+    if (photoRef) await discardOwnUpload(userId, photoRef.publicId);
+    if (sendUploadError(res, error)) return;
     console.error('Error logging care activity:', error);
     return res.status(500).json({
       success: false,
@@ -215,17 +228,28 @@ const loadCareLogForPhotoChange = async (req: AuthenticatedRequest, res: Respons
 const releasePhoto = (tree: { photoPublicId: string | null }, publicId: string | null) =>
   publicId && publicId !== tree.photoPublicId ? CloudinaryService.deleteImage(publicId) : Promise.resolve();
 
-/** PUT /trees/:treeId/care/:logId/photo (multipart "photo"): replaces the photo of a care entry. */
+/** PUT /trees/:treeId/care/:logId/photo { photo }: replaces the photo of a care entry with one already uploaded to Cloudinary. */
 export const replaceCarePhoto = async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.file) return res.status(400).json({ success: false, error: 'Take a photo to replace it with' });
+  const parsed = z.object({ photo: uploadRefSchema }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ success: false, error: 'Take a photo to replace it with' });
+  const userId = req.userId!;
+  const photoRef = parsed.data.photo;
   try {
     const found = await loadCareLogForPhotoChange(req, res);
-    if (!found) return;
-    const upload = await CloudinaryService.uploadImage(req.file, 'plantree/care_updates');
-    const [log] = await db.update(careLogs).set({ photoUrl: upload.url, photoPublicId: upload.publicId }).where(eq(careLogs.id, found.log.id)).returning();
+    if (!found) {
+      // Refused (not found, or not allowed): the new upload isn't needed
+      await discardOwnUpload(userId, photoRef.publicId);
+      return;
+    }
+    const [log] = await db.transaction(async (tx) => {
+      const kept = await claimUpload(tx, userId, 'CARE', photoRef);
+      return tx.update(careLogs).set({ photoUrl: kept.url, photoPublicId: kept.publicId }).where(eq(careLogs.id, found.log.id)).returning();
+    });
     await releasePhoto(found.tree, found.log.photoPublicId);
     return res.status(200).json({ success: true, data: log });
   } catch (error) {
+    await discardOwnUpload(userId, photoRef.publicId);
+    if (sendUploadError(res, error)) return;
     console.error('Error replacing care photo:', error);
     return res.status(500).json({ success: false, error: 'Failed to replace the photo' });
   }

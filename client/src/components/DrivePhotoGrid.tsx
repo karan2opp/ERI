@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import type { DrivePhoto } from '../types';
-import { fetchDrivePhotos, removeDrivePhoto, replaceDrivePhoto, type DrivePhotosPage } from '../services/api';
+import { fetchDrivePhotos, removeDrivePhoto, type DrivePhotosPage } from '../services/api';
+import { replaceDrivePhoto } from '../services/photoApi';
 import { Alert } from './ui/alert';
 import { Button } from './ui/button';
 import { ConfirmDialog } from './ui/confirm-dialog';
