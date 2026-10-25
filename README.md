@@ -21,8 +21,8 @@ PlanTree/
 │   │   ├── common/             # Cross-cutting concerns & shared utilities
 │   │   │   ├── config/         # Environment variables validation
 │   │   │   ├── db/             # Drizzle PostgreSQL schema & connection pool
-│   │   │   ├── middlewares/    # Clerk authentication & Multer upload
-│   │   │   └── services/       # Cloudinary file storage service
+│   │   │   ├── middlewares/    # Clerk authentication
+│   │   │   └── services/       # Cloudinary signing, photo uploads & the daily photo clean-up
 │   │   │
 │   │   ├── module/             # Feature Modules (Domain Driven)
 │   │   │   ├── user/           # User Module (sync, profile)
@@ -89,7 +89,18 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
 | `/map?open=places&form=<id>` | One place form (the link admins share) |
 | `/?drive=<id>` | A drive's own page (the link people share) |
 
-The home page has four number boxes: **trees planted**, **plantation drives**, **clean-up drives** and **waste collected**. The server counts the first three (`GET /api/v1/stats`, public: verified trees, and drives that have passed or been marked completed, by type); **waste collected** is a number admins keep up to date in **Admin → Settings → Waste collected** (kilograms), since nothing else records it. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Account and Admin, which open inside the app at `/map?open=…`). On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
+The home page has four number boxes: **trees planted**, **plantation drives**, **clean-up drives** and **waste collected**. Every number is stored data, not text in the page. Each is a **starting number** (what the team had done before the app) **plus what the app counts**, worked out by the server (`GET /api/v1/stats`, public, cached for a minute):
+
+| Box | Starting number | Plus what the app counts |
+|---|---|---|
+| Trees planted | 616 | every verified tree on the map, so each new tree raises it (a tree waiting for photo review is not counted yet) |
+| Plantation drives | 18 | plantation drives whose date has passed or that an admin marked completed |
+| Clean-up drives | 8 | the same, for clean-up drives |
+| Waste collected | 300 kg | the kilograms an admin enters when completing a clean-up drive (only completed drives count) |
+
+The four starting numbers live in the `app_settings` table (`baselineTrees`, `baselinePlantationDrives`, `baselineCleanupDrives`, `baselineWasteKg`). The server saves them the first time it starts, and admins can correct them in **Admin → Settings → Starting numbers**.
+
+The rest of this section is about the website header. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Account and Admin, which open inside the app at `/map?open=…`). On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
 
 **Join the team.** Admins paste the link to a Google Form in **Admin → Settings → Join the team form** (it must start with `https://`). While a link is set, the home page shows a **Join the team** button beside **Open the tree map** at the top, a **Join the team** card in Get involved and a button in the closing banner, all opening the form in a new tab; with no link, neither shows. The link is public (`GET /api/v1/site`) and stored in `app_settings`, so nothing needs a migration.
 
@@ -97,7 +108,7 @@ The home page has four number boxes: **trees planted**, **plantation drives**, *
 
 ## 🔔 Notifications (in the app)
 
-Notifications live in the **profile menu** (on the map and in the website header), not in a separate bell button, so the top bar fits small phones. The profile button shows how many are unread, and the menu has a **Notifications** row with the count; tapping it shows the list inside the menu (10 at a time from the server, with a back arrow, **Mark all as read** and a sound switch). New ones arrive live over the app's socket connection: the count goes up, it gives a small shake and a soft chime plays (made in the browser; it can be switched off per device, and browsers only allow sound after the first tap on the page). Tapping one marks it read and opens it. The code is in `components/Notifications.tsx` (`useInbox` and `NotificationList`), used by `ProfileDrawer`.
+Notifications live in the **profile menu** (on the map and in the website header), not in a separate bell button, so the top bar fits small phones. The profile button shows how many are unread, and the menu has a **Notifications** row with the count; tapping it shows the list inside the menu (10 at a time from the server, with a back arrow and a sound switch). **Opening the list marks everything as read**, including any that arrive while it is open, so the number on the profile button clears. New ones arrive live over the app's socket connection: the count goes up, it gives a small shake and a soft chime plays (made in the browser; it can be switched off per device, and browsers only allow sound after the first tap on the page). Tapping one marks it read and opens it: inside the map app it opens in place (no page reload), and from the website pages it loads the app at that address. Opening Admin from a link (`/map?open=admin`) shows a loading page until the server has said who you are, then the Admin page; anyone who isn't an admin is sent back to the map. `/map` is the address of the whole app (the map with the Admin, Drives, Account and other pages on top of it); the home page is `/`. The code is in `components/Notifications.tsx` (`useInbox` and `NotificationList`), used by `ProfileDrawer`.
 
 | What | Who gets it | Tapping it opens |
 |---|---|---|
@@ -117,7 +128,7 @@ Everyone finds the forms under **Suggest a place** (in the profile menu, and a c
 - **Where:** a pin on our map (search an area, then move the map under the pin; it starts where you are when the app knows) and/or a **Google Maps link** (only Google Maps addresses are taken). With only a link, the server reads the coordinates from it when the link has them (full links do, short `maps.app.goo.gl` links don't), so the admin still gets a pin.
 - **A landmark** people know (required).
 - **Answers** to the form's questions (each one required).
-- **Up to 5 pictures** (optional). The app makes big photos smaller before sending (at most 1600 px, JPEG), so 5 photos on mobile data stay quick; the server checks each is a real JPG, PNG or WEBP and stores it in Cloudinary (`plantree/places`).
+- **Up to 5 pictures** (optional). The app makes big photos smaller (at most 1600 px, JPEG) and sends them **straight to Cloudinary** (`plantree/places`), never through our server (see *Photo uploads* below); the place then carries only references to them.
 
 Only admins see what was sent: the pictures (tap to enlarge), the landmark, planting or clean-up, the answers next to the questions as they were asked (editing a form later doesn't change old answers), who sent it (name, email, phone), a small map with the pin and an **Open in Google Maps** link. Admins can remove a place (its pictures go too). Every new place goes into the admins' notifications.
 
@@ -172,18 +183,20 @@ After a drive, an admin opens it (Admin → Drives, or the Drives page) and uses
 - **Who sees the result:** everyone who can see the drive, once it is completed. A drive for everyone shows its summary and pictures to anyone (even signed out, including on its share link); a team-only drive shows them only to team members and admins. The server enforces this for the drive, the list and the pictures route, so a team-only drive's pictures never reach anyone else.
 - **How many pictures:** admins choose in **Admin → Settings → Drive pictures** (1 to 50, default 10). The server refuses a picture past the limit, even for several uploads at once. If the limit is lowered below what a drive already has, it keeps its pictures but can't get more until some are removed.
 - **Changing pictures:** each picture has a **replace** button (swap it for another, keeping its place) and a **remove** button (asks first); only admins see them, and the server refuses anyone else (`PUT` and `DELETE /api/v1/drives/:id/photos/:photoId`).
+- **Waste collected (clean-up drives):** a clean-up drive's wrap-up has a **Waste collected (kg)** box (a whole number, optional). It is saved when the admin taps **Mark as completed** (the confirmation says how much will be added) and **adds to the waste total on the home and About pages**. It can be changed or cleared after completing (**Save** next to the box). Only completed clean-ups count: **Reopen** takes the drive's waste out of the total (and hides it from everyone but admins) until it is completed again. Plantation drives have no waste box, and the server refuses waste on them (a drive changed from clean-up to plantation loses its waste). Everyone who can see the completed drive sees "120 kg of waste collected" in *How it went*.
 - **After completing:** the drive moves from *Upcoming* to *Past* (history) and gets a *Completed* badge. An admin can still rewrite the summary, add or remove pictures, or **Reopen** the drive, which hides the summary and pictures from everyone but admins again. A completed drive can't have its summary emptied.
-- Pictures are JPG, PNG or WEBP up to 10 MB, stored in Cloudinary (`plantree/drives`) and removed from there when a picture or the drive is deleted. They are not sent to the AI photo check, since only admins add them.
+- Pictures are JPG, PNG or WEBP, uploaded straight to Cloudinary (`plantree/drives`, never through our server; Cloudinary makes them at most 1200 px) and removed from there when a picture or the drive is deleted. They are not sent to the AI photo check, since only admins add them.
 
 | Route | What |
 |---|---|
 | `PATCH /api/v1/drives/:id` `{ summary }` | Admin: save the summary (a draft until completed) |
 | `POST /api/v1/drives/:id/photos` (multipart `photo`) | Admin: add a picture, up to the limit |
 | `DELETE /api/v1/drives/:id/photos/:photoId` | Admin: remove a picture |
-| `POST /api/v1/drives/:id/complete` `{ summary? }` and `/reopen` | Admin: complete a drive (needs a summary) or undo it |
+| `POST /api/v1/drives/:id/complete` `{ summary?, wasteKg? }` and `/reopen` | Admin: complete a drive (needs a summary; `wasteKg` for clean-ups) or undo it |
+| `PATCH /api/v1/drives/:id` `{ wasteKg }` | Admin: change or clear (`null`) the waste of a clean-up drive |
 | `GET /api/v1/drives/:id/photos?page=&limit=` | Pictures, 10 per page (up to 50), if you may see the drive and it is completed (admins always) |
 
-New drive columns (`status`, `summary`, `completed_at`, `completed_by`) and the `drive_photos` table need `npm run db:push`.
+New drive columns (`status`, `summary`, `completed_at`, `completed_by`, `waste_kg`) and the `drive_photos` table need `npm run db:push`.
 
 ## 🔑 Passwords
 
@@ -203,17 +216,51 @@ Anyone (signed out too) can read them, all paged on the server (10 per page, up 
 
 Admins change them with `POST /categories`, `PATCH /categories/:id` and `DELETE /categories/:id`. The first time the server starts it adds the 8 starting categories (Neem, Peepal, Banyan, Mango, Jamun, Ashoka, Gulmohar, Jacaranda) and links existing trees to the one with their name. That happens once, so categories an admin deletes don't come back. After pulling this change run `npm run db:push` (new `tree_categories` table and `category_id` column).
 
+## 📷 Photo uploads (photos never pass through our server)
+
+Every photo (a tree, a care entry, a drive picture, the pictures of a suggested place) goes **from the phone straight to Cloudinary**. That matters on a small server (Render's free instance has about 0.1 CPU): our server no longer receives, copies, hashes or forwards photo bytes, so many people planting at once only send it tiny JSON requests. There is no `multer` in the server any more. Cloudinary keys are required (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`): without them uploads answer 503 and there are no placeholder images.
+
+**The steps** (client: `client/src/lib/uploadPhoto.ts` and `services/photoApi.ts`; server: `common/services/uploads.ts`):
+
+1. **A ticket.** `POST /api/v1/uploads/signature { kind: TREE | CARE | DRIVE | PLACE, count }` gives, for each photo, an id the server chose (`plantree/<kind>/<your user id>/<random>`) and a signed, one-hour permission to upload exactly that. The signature covers the id, the allowed formats (JPG, PNG, WEBP) and Cloudinary's resize to at most 1200 x 1200, so the browser can't change them (tested: a changed id or transformation is refused with 401). Drive pictures are for admins only. The API secret never leaves the server. A ticket is a row in `upload_tickets`.
+2. **The upload.** The browser sends the file to Cloudinary and gets back `{ public_id, version, signature }`.
+3. **Using it.** The app sends that reply (a few hundred bytes of JSON) with the tree, care entry, drive picture or place. The server checks the signature (only Cloudinary, with our secret, can make it) and **uses the ticket up in the same database transaction as the row that keeps the photo**, so a photo can be used once, only by the person it was issued to, and only for the kind it was issued for. If the save fails, nothing is half-done.
+
+**AI check by link.** `POST /trees/check-photo { photo }` and planting look at the photo on Cloudinary: OpenAI is given its address (it fetches the photo itself), so the server never handles the bytes. The answer is remembered per photo for 15 minutes, so checking and then planting costs one call. At most 4 checks run at once and 40 may wait (`common/utils/limitConcurrency.ts`); beyond that the answer is 503 "busy, try again". A rejected photo is deleted at once.
+
+**Photos that aren't used.** Immediately, where the server knows: a photo the AI rejects, a refused request (too soon to water, form closed, over the drive's limit, a failed save), a retake (`POST /uploads/discard { publicId }`, own photos only), the old photo after a replace, and everything when a tree, drive or place is deleted (a tree's care entries' photos too). Everything else (someone closes the app after uploading) is caught by the **daily clean-up** (`common/services/uploadSweeper.ts`): about 2 minutes after the server starts and every 6 hours, tickets older than 24 hours are removed with their photos. Before deleting anything it checks the database again, so a photo a tree, care entry, drive or place is keeping is never deleted, and several copies of the server don't clash. Its last result is saved in `app_settings` (`lastUploadSweep`). A person can hold at most 30 unused tickets and ask for 120 per hour.
+
+**Local development** needs real Cloudinary keys too. `GET /api/v1/health` says `cloudinaryConfigured`.
+
+**Database changes** (run `npm run db:push`, or this SQL in Neon; safe to run twice):
+
+```sql
+BEGIN;
+ALTER TABLE "drives" ADD COLUMN IF NOT EXISTS "waste_kg" integer;
+CREATE TABLE IF NOT EXISTS "upload_tickets" (
+	"public_id" varchar(255) PRIMARY KEY NOT NULL,
+	"user_id" varchar(255) NOT NULL,
+	"kind" varchar(10) NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "upload_tickets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade
+);
+CREATE INDEX IF NOT EXISTS "upload_tickets_user_idx" ON "upload_tickets" USING btree ("user_id");
+CREATE INDEX IF NOT EXISTS "upload_tickets_created_idx" ON "upload_tickets" USING btree ("created_at");
+CREATE INDEX IF NOT EXISTS "care_logs_tree_idx" ON "care_logs" USING btree ("tree_id", "performed_at");
+COMMIT;
+```
+
 ## 📸 Photo check and planting rules
 
 A tree is only registered when two things hold, both checked **on the server**:
 
 1. **You are at the tree.** There is no map to set a location on: you stand next to the tree and tap **Confirm location**, and the tree is registered exactly where you are standing. The app listens to your GPS for a few seconds and averages the readings (trusting the accurate ones more), so the spot is as close as the phone can manage. The location has to be accurate to 20 m or better, and if you walk more than 15 m away after confirming you are asked to confirm again. The app sends that reading with the tree and the server checks it again (`deviceLatitude`, `deviceLongitude`, `deviceAccuracy`; limits in `server/src/common/utils/treePolicy.ts`). Phone GPS is typically good to 3 to 5 m in the open, and worse under trees or near buildings.
-2. **The photo shows a tree or plant.** A photo is required and is checked by an OpenAI vision model (`server/src/common/services/treeVerifier.ts`), which can only answer one of three things:
+2. **The photo shows a tree or plant.** A photo is required and is checked (by its Cloudinary link, see *Photo uploads*) by an OpenAI vision model (`server/src/common/services/treeVerifier.ts`), which can only answer one of three things:
 
    | Answer | What happens |
    |---|---|
    | `true` | It is a tree or plant: registered and on the map straight away |
-   | `false` | It is not: the photo is rejected (HTTP 422) and nothing is saved or uploaded |
+   | `false` | It is not: the photo is rejected (HTTP 422), nothing is saved, and the photo is deleted from Cloudinary at once |
    | `pending` | The model is not sure: the tree is saved as `PENDING` and stays off the map until an admin approves or rejects it in **Admin → Review** |
 
    A missing `OPENAI_API_KEY`, a timeout, an API error or an unexpected answer all count as `pending`, so a tree is never approved by accident. Pending trees are visible only to their owner (My trees → "Awaiting review") and admins, and can't be cared for until approved. Replacing a tree's photo runs the same check. Each person can send 30 photos an hour, since every check costs money.

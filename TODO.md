@@ -13,7 +13,7 @@ Last updated 2026-10-19. Hosting plan: client on Vercel, server on Render, Postg
 
 ## Needs you (keys and accounts)
 
-- [ ] **Cloudinary keys** in `server/.env` (until then every tree photo is a random stock image)
+- [ ] **Cloudinary keys** in `server/.env` and on Render (photos are uploaded straight from the phone to Cloudinary with a signature from the server; without the keys no photo can be added)
 - [ ] **Resend**: create an account, verify your domain, set `RESEND_API_KEY` and `EMAIL_FROM` (until then no email is sent; push still works)
 - [ ] **Push keys for production**: run `npx web-push generate-vapid-keys` and set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` on Render (the keys in your local `.env` are for development only)
 - [ ] **Clerk production instance** keys (the current ones are development keys)
@@ -61,8 +61,9 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] Error tracking (for example Sentry) and uptime monitoring
 
 ### Before the site goes public
+- [ ] **Direct photo uploads in production:** run this in Neon (or `npm run db:push`) before deploying: `upload_tickets` table (one row per photo slot) and an index on care logs. The SQL is in the README under *Photo uploads* (it also adds the `waste_kg` column for drives). Set `TRUST_PROXY=1` on Render so rate limits see real addresses. The first clean-up runs 2 minutes after the server starts, then every 6 hours
 - [ ] **Place forms in production:** run `npm run db:push` against Neon (with `DATABASE_URL_DIRECT`) before deploying, for the new `place_forms` and `place_suggestions` tables. Then create the first form in Admin → Places
-- [ ] **Turn off the placeholder numbers on the home and About pages.** The four impact boxes currently show made-up sample numbers (1,250 trees, 18 plantation drives, 12 clean-up drives, 3,400 kg). In `client/src/components/site/ImpactNumbers.tsx` set `SHOW_SAMPLE_NUMBERS` to `false` so they show the real counts, and enter the real waste total in Admin → Settings
+- [ ] **Drive waste in production:** run `ALTER TABLE drives ADD COLUMN IF NOT EXISTS waste_kg integer;` in Neon (or `npm run db:push`) before deploying. The server saves the starting numbers (616 trees, 18 plantation drives, 8 clean-up drives, 300 kg) the first time it starts; check them in Admin → Settings → Starting numbers
 
 ### Quality
 - [ ] Automated tests and CI: the checks I run by hand (roles, drive visibility, photo check, notifications) should become real test files that run on every push
