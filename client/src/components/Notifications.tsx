@@ -19,9 +19,10 @@ const ICON: Record<InboxItem['type'], { icon: React.ReactNode; tone: string }> =
 /**
  * Your notifications: how many you haven't read, and the list (10 at a time from the server, loaded with `load`).
  * New ones arrive live and play a soft chime (which can be switched off); `ringing` is true for a moment after one
- * arrives. Signed out, everything stays empty.
+ * arrives. Signed out, everything stays empty. `navigate` can open a notification's link inside the app (returning
+ * true); otherwise the link opens as a normal page load.
  */
-export function useInbox() {
+export function useInbox(navigate?: (link: string) => boolean) {
   const { isSignedIn } = useAuth();
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<InboxItem[] | null>(null);
@@ -105,7 +106,7 @@ export function useInbox() {
         // Opening it matters more than the dot
       }
     }
-    if (n.link) window.location.assign(n.link);
+    if (n.link && !navigate?.(n.link)) window.location.assign(n.link);
   };
 
   const readAll = async () => {

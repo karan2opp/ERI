@@ -55,17 +55,24 @@ export const ProfileDrawer: React.FC<{
   onAdmin: () => void;
   /** Suggest a place to plant trees or clean up */
   onPlaces: () => void;
+  /** Opens a notification's link inside the app and returns true (left out on the website pages, where it is a normal page load) */
+  onOpenLink?: (link: string) => boolean;
   /** Back to the home page (left out on the home page itself) */
   onHome?: () => void;
   /** A smaller, squarer button (the home page's header); the map keeps the big round one */
   compact?: boolean;
-}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onPlaces, onHome, compact = false }) => {
+}> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onPlaces, onOpenLink, onHome, compact = false }) => {
   const isAdmin = isAdminRole(role);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useThemeChoice();
-  const inbox = useInbox();
+  const inbox = useInbox((link) => {
+    const handled = onOpenLink?.(link) ?? false;
+    // The menu is in the way of whatever it opened
+    if (handled) setOpen(false);
+    return handled;
+  });
   // The menu, or your notifications inside the drawer
   const [view, setView] = useState<'menu' | 'notifications'>('menu');
   const panelRef = useRef<HTMLDivElement>(null);
@@ -85,6 +92,14 @@ export const ProfileDrawer: React.FC<{
     setView('notifications');
     void inbox.load(1);
   };
+
+  // Looking at the list counts as reading it: everything is marked read while it is open, including anything
+  // that arrives in the meantime
+  useEffect(() => {
+    if (open && view === 'notifications' && inbox.unread > 0) void inbox.readAll();
+    // readAll only reads state through the server, so it doesn't need to be a dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view, inbox.unread]);
 
   useEffect(() => {
     if (!open) return;

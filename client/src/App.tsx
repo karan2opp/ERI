@@ -40,6 +40,8 @@ import { HomePage } from './pages/HomePage';
 import { DonatePage } from './pages/DonatePage';
 import { AboutPage } from './pages/AboutPage';
 import { PlacesPage } from './pages/PlacesPage';
+import { Page } from './components/ui/top-bar';
+import { Spinner } from './components/ui/spinner';
 
 type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
 type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives' | 'places';
@@ -103,12 +105,15 @@ function useScreens() {
 }
 
 function MapApp() {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
   const { openSignIn } = useClerk();
   const { user: clerkUser } = useUser();
   const { screen, open, replace, back } = useScreens();
 
   const [role, setRole] = useState<Role>('USER');
+  // False until we know who you are: Clerk has loaded and, if you are signed in, the server has told us your role.
+  // Admin can only be shown once this is true, so it waits behind a loading page instead of the map.
+  const [roleKnown, setRoleKnown] = useState(false);
   // Your own phone number (optional, not verified)
   const [phone, setPhone] = useState<string | null>(null);
   // Team members and admins also see team-only drives; the server sends each person only what they may see
@@ -153,8 +158,11 @@ function MapApp() {
     if (!isSignedIn) {
       setRole('USER');
       setPhone(null);
+      // Signed out is only known once Clerk has finished loading
+      setRoleKnown(isLoaded);
       return;
     }
+    setRoleKnown(false);
     let cancelled = false;
     syncCurrentUser()
       .then((u) => {
@@ -162,13 +170,20 @@ function MapApp() {
         setRole(asRole(u.role));
         setPhone(u.phone ?? null);
       })
-      .catch((err) => console.warn('User sync notice:', err));
+      .catch((err) => console.warn('User sync notice:', err))
+      // Even if the server can't be reached, stop waiting (Admin then stays closed, as for any non-admin)
+      .finally(() => !cancelled && setRoleKnown(true));
     return () => {
       cancelled = true;
     };
     // getToken is stable per session; re-run on sign-in/out and account switches
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSignedIn, userId]);
+  }, [isSignedIn, isLoaded, userId]);
+
+  // Admin is only for admins: a link to it (or a stale tab) from anyone else goes back to the map
+  useEffect(() => {
+    if (screen === 'admin' && roleKnown && !isAdminRole(role)) replace('map');
+  }, [screen, roleKnown, role, replace]);
 
   // ---- Your location: follow it; the first fix centres the map ----
   // Bumping this restarts the search for your location (the "Try again" button, or location being allowed later)
@@ -411,6 +426,50 @@ function MapApp() {
     const q = new URLSearchParams(window.location.search);
     return q.get('open') === 'places' ? (q.get('form') ?? undefined) : undefined;
   });
+
+  /**
+   * A notification's link, opened inside the app when it points at the app (so tapping one doesn't reload the
+   * whole page and flash the map first). Returns false for anything else, which the caller opens as a normal link.
+   */
+  const openLink = useCallback(
+    (link: string): boolean => {
+      let url: URL;
+      try {
+        url = new URL(link, window.location.origin);
+      } catch {
+        return false;
+      }
+      if (url.origin !== window.location.origin || url.pathname.replace(/\/+$/, '') !== '/map') return false;
+      const q = url.searchParams;
+      const treeId = q.get('tree');
+      if (treeId && /^[0-9a-f-]{36}$/i.test(treeId)) {
+        fetchTreeById(treeId).then(selectTree, () => {});
+        return true;
+      }
+      const target = q.get('open');
+      if (target === 'admin') {
+        const tab = q.get('tab');
+        setAdminStart({
+          userId: q.get('user') ?? undefined,
+          tab: tab === 'review' || tab === 'places' ? (tab as 'review' | 'places') : undefined,
+          formId: tab === 'places' ? (q.get('form') ?? undefined) : undefined,
+        });
+        open('admin');
+        return true;
+      }
+      if (target === 'places') {
+        setPlacesStartForm(q.get('form') ?? undefined);
+        open('places');
+        return true;
+      }
+      if (target === 'drives' || target === 'myTrees' || target === 'account') {
+        open(target);
+        return true;
+      }
+      return false;
+    },
+    [open, selectTree]
+  );
 
   // A pin tapped on the map: open it now, and load its full details
   const selectPin = useCallback((pin: TreePin) => {
@@ -680,6 +739,7 @@ function MapApp() {
                     onAccount={() => open('account')}
                     onAdmin={() => open('admin')}
                     onPlaces={() => open('places')}
+                    onOpenLink={openLink}
                     onHome={() => window.location.assign('/')}
                   />
                 </div>
@@ -811,7 +871,16 @@ function MapApp() {
         />
       )}
 
-      {screen === 'admin' && isAdminRole(role) && (
+      {/* Opened straight from a link: wait for who you are before showing Admin, so the map doesn't show first */}
+      {screen === 'admin' && !roleKnown && (
+        <Page title="Admin" onBack={back} wide>
+          <div className="grid flex-1 place-items-center">
+            <Spinner label="Loading Admin" className="size-8 text-primary" />
+          </div>
+        </Page>
+      )}
+
+      {screen === 'admin' && roleKnown && isAdminRole(role) && (
         <AdminPage
           role={role}
           you={you}
