@@ -12,9 +12,24 @@ type TokenGetter = () => Promise<string | null>;
 
 let getAuthToken: TokenGetter | null = null;
 
+// Whether the app knows yet if you are signed in (Clerk has finished loading). A page that loads its list the moment it
+// opens (My trees opened by a link) would otherwise ask before the sign-in token is ready, and the server would answer
+// 401 "sign in". Requests wait for this, for at most a few seconds in case Clerk can't load at all (an ad blocker, offline).
+let authKnown = false;
+let markAuthKnown: () => void = () => {};
+const authKnownPromise = new Promise<void>((resolve) => {
+  markAuthKnown = () => {
+    authKnown = true;
+    resolve();
+  };
+});
+const AUTH_WAIT_MS = 4000;
+
 // Identity is proven only by the Clerk session token; the server never trusts client-supplied user headers.
-export const setAuthTokenGetter = (getter: TokenGetter | null) => {
+/** `known` is false while Clerk is still loading: the getter is then only a placeholder and requests keep waiting. */
+export const setAuthTokenGetter = (getter: TokenGetter | null, known = true) => {
   getAuthToken = getter;
+  if (known) markAuthKnown();
 };
 
 export const getAuthTokenValue = async (): Promise<string | null> => {
@@ -28,6 +43,11 @@ export const getAuthTokenValue = async (): Promise<string | null> => {
 };
 
 api.interceptors.request.use(async (config) => {
+  if (!authKnown) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([authKnownPromise, new Promise<void>((resolve) => (timer = setTimeout(resolve, AUTH_WAIT_MS)))]);
+    clearTimeout(timer);
+  }
   const token = await getAuthTokenValue();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

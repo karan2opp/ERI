@@ -137,7 +137,8 @@ export default function MapApp() {
 
   // ---- Auth: send the Clerk token with API calls and ask the server who we are (role) ----
   useEffect(() => {
-    setAuthTokenGetter(isSignedIn ? getToken : null);
+    // Until Clerk has loaded this is only a placeholder: API calls wait for it (see services/api.ts)
+    setAuthTokenGetter(isSignedIn ? getToken : null, isLoaded);
     reconnectSocket();
     if (!isSignedIn) {
       setRole('USER');
