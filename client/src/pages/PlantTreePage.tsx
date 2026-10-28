@@ -14,6 +14,7 @@ import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
+import { Chips } from '../components/ui/chips';
 import { CareScheduleFields, DEFAULT_SCHEDULE, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
 /**
@@ -112,6 +113,8 @@ export const PlantTreePage: React.FC<{
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
+  // A new tree adds to our planted count; an old tree (planted before this map) is only marked on the map
+  const [isOld, setIsOld] = useState(false);
   // Defaults to now; change it to add a tree that was planted earlier
   const [plantedDate, setPlantedDate] = useState(() => toLocalParts(new Date()).date);
   const [plantedTime, setPlantedTime] = useState(() => toLocalParts(new Date()).time);
@@ -180,6 +183,7 @@ export const PlantTreePage: React.FC<{
           deviceLongitude: fix.lng,
           deviceAccuracy: fix.accuracy,
           plantedAt: plantedAt?.toISOString(),
+          isOld,
           waterEveryDays: parseDays(schedule.water)!,
           fertilizeEveryDays: parseDays(schedule.fertilize)!,
           weedEveryDays: parseDays(schedule.weed)!,
@@ -263,12 +267,35 @@ export const PlantTreePage: React.FC<{
         <CategorySelect id="plant-category" value={category} onChange={setCategory} />
       </Field>
 
+      <Field
+        label="New tree or old tree?"
+        description={
+          isOld
+            ? 'An old tree was planted before this map existed. It is already part of our planted total, so marking it here does not add to the count.'
+            : 'A tree that was planted recently. It is added to our planted count.'
+        }
+      >
+        <Chips
+          label="New tree or old tree"
+          options={[
+            { value: 'NEW', label: 'New tree' },
+            { value: 'OLD', label: 'Old tree' },
+          ]}
+          value={isOld ? 'OLD' : 'NEW'}
+          onChange={(v) => setIsOld(v === 'OLD')}
+        />
+      </Field>
+
       <PlantedAtField
         date={plantedDate}
         time={plantedTime}
         onDate={setPlantedDate}
         onTime={setPlantedTime}
-        description="Planting it now? Leave this as it is. Adding an older tree? Set when it was planted, and its age is counted from then."
+        description={
+          isOld
+            ? 'Roughly when it was planted. An estimate is fine, and its age is counted from then.'
+            : 'Planting it now? Leave this as it is. Planted a little earlier? Set when, and its age is counted from then.'
+        }
       />
 
       <CareScheduleFields value={schedule} onChange={setSchedule} />

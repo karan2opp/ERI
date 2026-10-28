@@ -46,6 +46,8 @@ export interface Tree {
   longitude: number;
   address?: string;
   healthScore: number;
+  /** An old tree: planted before the app and marked on the map later, so it doesn't add to the planted count */
+  isOld?: boolean;
   /** When it was planted (its "birth date"); can be earlier than when it was added to the map */
   plantedAt: string;
   lastWateredAt?: string | null;

@@ -226,6 +226,7 @@ export const TreeDetails: React.FC<{
           <h2 className="text-xl leading-tight">{tree.name}</h2>
           <p className="truncate text-muted-foreground">{tree.species}</p>
           <div className="flex flex-wrap gap-1.5">
+            {tree.isOld && <Badge variant="outline" title="Planted before this map; not part of the new planted count">Old tree</Badge>}
             {needs.length ? needs.map((n) => <Badge key={n} variant={n}>{STATUS_LABEL[n]}</Badge>) : <Badge variant="healthy">{STATUS_LABEL.healthy}</Badge>}
           </div>
         </div>

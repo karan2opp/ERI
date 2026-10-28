@@ -814,6 +814,7 @@ function MapApp() {
       {screen === 'edit' && editing && (
         <EditTreePage
           tree={editing}
+          isAdmin={isAdminRole(role)}
           onClose={back}
           onSaved={(tree) => {
             back();

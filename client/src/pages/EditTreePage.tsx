@@ -10,9 +10,12 @@ import { Alert } from '../components/ui/alert';
 import { Spinner } from '../components/ui/spinner';
 import { PhotoField } from '../components/PhotoField';
 import { PlantedAtField, fromLocalParts, toLocalParts } from '../components/PlantedAtField';
+import { Chips } from '../components/ui/chips';
 import { CareScheduleFields, parseDays, scheduleValid } from '../components/CareScheduleFields';
 
-export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: (tree: Tree) => void }> = ({ tree, onClose, onSaved }) => {
+/** `isAdmin`: admins can also say whether this is a new or an old tree (it decides whether it adds to the planted count). */
+export const EditTreePage: React.FC<{ tree: Tree; isAdmin: boolean; onClose: () => void; onSaved: (tree: Tree) => void }> = ({ tree, isAdmin, onClose, onSaved }) => {
+  const [isOld, setIsOld] = useState(Boolean(tree.isOld));
   const [photo, setPhoto] = useState<File | null>(null);
   const [name, setName] = useState(tree.name);
   // Starts on the tree's current category (trees from before categories existed start empty and keep their kind until one is chosen)
@@ -63,6 +66,7 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
           description: description.trim(),
           healthScore: health,
           plantedAt: plantedAt?.toISOString(),
+          ...(isAdmin ? { isOld } : {}),
           waterEveryDays: parseDays(schedule.water)!,
           fertilizeEveryDays: parseDays(schedule.fertilize)!,
           weedEveryDays: parseDays(schedule.weed)!,
@@ -103,6 +107,19 @@ export const EditTreePage: React.FC<{ tree: Tree; onClose: () => void; onSaved: 
       <Field label="Address or landmark" htmlFor="edit-address">
         <Input id="edit-address" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={500} />
       </Field>
+      {isAdmin && (
+        <Field label="New tree or old tree?" description="An old tree was planted before this map existed and is already part of the planted total, so it doesn't add to the count. Changing this changes the number on the home page.">
+          <Chips
+            label="New tree or old tree"
+            options={[
+              { value: 'NEW', label: 'New tree' },
+              { value: 'OLD', label: 'Old tree' },
+            ]}
+            value={isOld ? 'OLD' : 'NEW'}
+            onChange={(v) => setIsOld(v === 'OLD')}
+          />
+        </Field>
+      )}
       <PlantedAtField date={plantedDate} time={plantedTime} onDate={setPlantedDate} onTime={setPlantedTime} />
       <CareScheduleFields value={schedule} onChange={setSchedule} />
       <Field label={`Health: ${health}%`} htmlFor="edit-health" description="How the tree looks today: leaves, bark, new growth.">

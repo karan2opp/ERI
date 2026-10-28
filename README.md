@@ -93,10 +93,12 @@ The home page has four number boxes: **trees planted**, **plantation drives**, *
 
 | Box | Starting number | Plus what the app counts |
 |---|---|---|
-| Trees planted | 616 | every verified tree on the map, so each new tree raises it (a tree waiting for photo review is not counted yet) |
+| Trees planted | 616 | every verified **new** tree on the map, so each new tree raises it (a tree waiting for photo review is not counted yet; **old trees** don't raise it, see below) |
 | Plantation drives | 18 | plantation drives whose date has passed or that an admin marked completed |
 | Clean-up drives | 8 | the same, for clean-up drives |
 | Waste collected | 300 kg | the kilograms an admin enters when completing a clean-up drive (only completed drives count) |
+
+**Old trees and new trees.** The 616 trees planted before the app are being marked on the map slowly. When a tree is added (Plant a tree) you choose **New tree** or **Old tree**. A new tree adds to the count. An old tree is marked on the map (and set to the date it was planted, roughly) but does not add to the count, because it is already inside the 616. The server keeps this as `trees.is_old` (default false, so every tree that exists today counts as new). The home page shows `max(starting number, old trees marked) + new trees` (`common/services/treeCounts.ts`): while old trees are being marked it is `616 + new trees`; once every old tree is on the map, or the starting number is set to 0 in **Admin → Settings → Starting numbers** (which also shows how many old trees are marked so far), all trees are simply counted and nothing jumps. Only admins can change a tree between new and old (Edit tree). Old trees show an **Old tree** label. Production SQL for this: `ALTER TABLE "trees" ADD COLUMN IF NOT EXISTS "is_old" boolean DEFAULT false NOT NULL;`
 
 The four starting numbers live in the `app_settings` table (`baselineTrees`, `baselinePlantationDrives`, `baselineCleanupDrives`, `baselineWasteKg`). The server saves them the first time it starts, and admins can correct them in **Admin → Settings → Starting numbers**.
 

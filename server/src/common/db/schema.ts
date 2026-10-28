@@ -73,6 +73,8 @@ export const trees = pgTable('trees', {
   longitude: doublePrecision('longitude').notNull(),
   address: varchar('address', { length: 500 }),
   healthScore: integer('health_score').default(100).notNull(),
+  // An old tree: planted before the app, marked on the map later. It is already part of the home page's starting number, so it does not add to the count.
+  isOld: boolean('is_old').default(false).notNull(),
   // When the tree was actually planted (its "birth date"); can be earlier than when it was added to the map
   plantedAt: timestamp('planted_at').defaultNow().notNull(),
   // Last WATERED care log

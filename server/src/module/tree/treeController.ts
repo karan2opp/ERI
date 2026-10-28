@@ -72,6 +72,8 @@ const createTreeSchema = z.object({
   latitude: latitudeSchema,
   longitude: longitudeSchema,
   plantedAt: plantedAtSchema.optional(),
+  // An old tree: planted before the app and only now marked on the map. It doesn't add to the home page's count.
+  isOld: z.boolean().optional(),
   // How often it needs each kind of care (defaults: water 7, fertilise 60, remove grass 30 days)
   waterEveryDays: intervalDays.optional(),
   fertilizeEveryDays: intervalDays.optional(),
@@ -91,6 +93,8 @@ const updateTreeSchema = z.object({
   address: z.string().trim().max(500).optional(),
   healthScore: z.coerce.number().int().min(0).max(100).optional(),
   plantedAt: plantedAtSchema.optional(),
+  // New or old tree (only admins can change it: it decides whether the tree adds to the home page's count)
+  isOld: z.boolean().optional(),
   waterEveryDays: intervalDays.optional(),
   fertilizeEveryDays: intervalDays.optional(),
   weedEveryDays: intervalDays.optional(),
@@ -205,9 +209,10 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
 
     const now = new Date();
     const plantedAt = parsed.data.plantedAt ?? now;
+    const isOld = parsed.data.isOld === true;
     // Planted just now: that planting is its first watering. An older tree being added to the map
     // has no known watering yet, so it starts as "needs water" until someone logs one.
-    const justPlanted = now.getTime() - plantedAt.getTime() < JUST_PLANTED_MS;
+    const justPlanted = !isOld && now.getTime() - plantedAt.getTime() < JUST_PLANTED_MS;
 
     let newTree;
     try {
@@ -226,6 +231,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
           address: address || '',
           userId,
           plantedAt,
+          isOld,
           waterEveryDays: parsed.data.waterEveryDays,
           fertilizeEveryDays: parsed.data.fertilizeEveryDays,
           weedEveryDays: parsed.data.weedEveryDays,
@@ -240,7 +246,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
         await tx.insert(careLogs).values({
           treeId: row.id,
           actionType: justPlanted ? 'WATERED' : 'INSPECTED',
-          notes: justPlanted ? 'Planted and watered' : 'Added to the map',
+          notes: justPlanted ? 'Planted and watered' : isOld ? 'Old tree added to the map' : 'Added to the map',
           photoUrl: row.photoUrl,
           photoPublicId: row.photoPublicId,
           userId,
@@ -259,7 +265,7 @@ export const createTree = async (req: AuthenticatedRequest, res: Response) => {
     void notifyAdmins(
       {
         type: 'TREE_PLANTED',
-        title: `${req.userName || 'Someone'} planted a new tree`,
+        title: `${req.userName || 'Someone'} ${newTree.isOld ? 'added an old tree to the map' : 'planted a new tree'}`,
         body: [newTree.name, newTree.species].filter(Boolean).join(' · ') + (pending ? ' · waiting for review' : ''),
         link: pending ? '/map?open=admin&tab=review' : `/map?tree=${newTree.id}`,
       },
@@ -365,6 +371,7 @@ export const updateTree = async (req: AuthenticatedRequest, res: Response) => {
             address: address !== undefined ? address : existingTree.address,
             healthScore: healthScore !== undefined ? healthScore : existingTree.healthScore,
             plantedAt: plantedAt ?? existingTree.plantedAt,
+            isOld: parsed.data.isOld !== undefined && isAdminRole(req.userRole) ? parsed.data.isOld : existingTree.isOld,
             waterEveryDays: parsed.data.waterEveryDays ?? existingTree.waterEveryDays,
             fertilizeEveryDays: parsed.data.fertilizeEveryDays ?? existingTree.fertilizeEveryDays,
             weedEveryDays: parsed.data.weedEveryDays ?? existingTree.weedEveryDays,

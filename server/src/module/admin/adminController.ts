@@ -9,6 +9,7 @@ import { normalizePhone } from '../../common/utils/phone';
 import { ROLES, isAdminRole } from '../../common/auth/roles';
 import { DRIVE_PHOTO_LIMIT_MAX, DRIVE_PHOTO_LIMIT_MIN, IMPACT_MAX, getSettings, updateSettings } from '../../common/services/settingsService';
 import { TREE_STATUSES, statusCondition } from '../../common/utils/careSchedule';
+import { countVerifiedTrees } from '../../common/services/treeCounts';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 
 // Access is enforced by requireAuth + requireAdmin in adminRoutes.
@@ -307,10 +308,13 @@ export const reviewTree = async (req: Request, res: Response) => {
   }
 };
 
+/** The settings, plus how many old trees have been marked on the map so far (shown next to the starting number of trees). */
+const withOldTreeCount = async (settings: Awaited<ReturnType<typeof getSettings>>) => ({ ...settings, oldTreesMarked: (await countVerifiedTrees()).old });
+
 /** GET /admin/settings: the app-wide switches (admins and super admins only). */
 export const getAppSettings = async (_req: Request, res: Response) => {
   try {
-    res.status(200).json({ success: true, data: await getSettings() });
+    res.status(200).json({ success: true, data: await withOldTreeCount(await getSettings()) });
   } catch (error) {
     console.error('Error loading settings:', error);
     res.status(500).json({ success: false, error: 'Failed to load the settings' });
@@ -367,7 +371,7 @@ export const setAppSettings = async (req: AuthenticatedRequest, res: Response) =
     return res.status(400).json({ success: false, error: friendly });
   }
   try {
-    res.status(200).json({ success: true, data: await updateSettings(parsed.data, req.userId!) });
+    res.status(200).json({ success: true, data: await withOldTreeCount(await updateSettings(parsed.data, req.userId!)) });
   } catch (error) {
     console.error('Error saving settings:', error);
     res.status(500).json({ success: false, error: 'Failed to save the settings' });

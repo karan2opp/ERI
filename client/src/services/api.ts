@@ -141,6 +141,8 @@ export interface NewTreeInput {
   deviceLongitude: number;
   deviceAccuracy: number;
   plantedAt?: string;
+  /** An old tree (planted before the app): marked on the map without adding to the planted count */
+  isOld?: boolean;
   waterEveryDays: number;
   fertilizeEveryDays: number;
   weedEveryDays: number;
@@ -161,6 +163,8 @@ export interface TreeChanges {
   description: string;
   healthScore: number;
   plantedAt?: string;
+  /** New or old tree (admins only; ignored for anyone else) */
+  isOld?: boolean;
   waterEveryDays: number;
   fertilizeEveryDays: number;
   weedEveryDays: number;
@@ -284,6 +288,8 @@ export interface AppSettings {
   drivePhotoLimit: number;
   /** The home page's starting numbers: what the NGO had done before the app (the page adds what the app counts) */
   baselineTrees: number;
+  /** How many old trees have been marked on the map so far (they don't add to the count) */
+  oldTreesMarked: number;
   baselinePlantationDrives: number;
   baselineCleanupDrives: number;
   baselineWasteKg: number;

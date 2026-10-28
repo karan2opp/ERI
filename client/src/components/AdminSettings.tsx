@@ -193,6 +193,9 @@ export const AdminSettings: React.FC = () => {
         <p className="text-muted-foreground">
           What the team had already done before using the app. The home and About pages show these <strong>plus what the app counts itself</strong>: trees planted by people on the map, drives that have been held, and the waste you record when you complete a clean-up drive. Change them only if the starting figures were wrong.
         </p>
+        <p className="text-muted-foreground">
+          <strong>Old trees:</strong> trees that were planted before the app are marked on the map one by one with <em>Old tree</em> chosen, and they don't add to the count. So far <strong>{settings.oldTreesMarked}</strong> old {settings.oldTreesMarked === 1 ? 'tree is' : 'trees are'} marked. The pages show the larger of <em>Trees planted</em> below and the old trees marked, plus the new trees. When every old tree is on the map, set <em>Trees planted</em> to 0 and all trees are simply counted.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {BASELINES.map(({ key, label, unit }) => {
             const valid = baseText[key].trim() !== '' && Number.isInteger(baseNumber(key)) && baseNumber(key) >= 0 && baseNumber(key) <= IMPACT_MAX;
