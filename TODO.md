@@ -61,6 +61,7 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] Error tracking (for example Sentry) and uptime monitoring
 
 ### Before the site goes public
+- [ ] **Media page in production:** run the SQL in the README under *Media page and old trees: database changes* in Neon (it creates `media_items` and adds `trees.is_old`) before deploying. Then add the first photos and videos in Admin → Media. Videos are limited to 100 MB by Cloudinary's free plan; a larger plan allows bigger files
 - [ ] **Old trees in production:** run `ALTER TABLE "trees" ADD COLUMN IF NOT EXISTS "is_old" boolean DEFAULT false NOT NULL;` in Neon before deploying. Every tree already there counts as new, so the home page keeps showing 616 + the trees on the map. When all 616 old trees are marked, set Admin → Settings → Starting numbers → Trees planted to 0
 - [ ] **Direct photo uploads in production:** run this in Neon (or `npm run db:push`) before deploying: `upload_tickets` table (one row per photo slot) and an index on care logs. The SQL is in the README under *Photo uploads* (it also adds the `waste_kg` column for drives). Set `TRUST_PROXY=1` on Render so rate limits see real addresses. The first clean-up runs 2 minutes after the server starts, then every 6 hours
 - [ ] **Place forms in production:** run `npm run db:push` against Neon (with `DATABASE_URL_DIRECT`) before deploying, for the new `place_forms` and `place_suggestions` tables. Then create the first form in Admin → Places

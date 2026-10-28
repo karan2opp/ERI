@@ -187,6 +187,27 @@ export const drivePhotos = pgTable(
   (t) => [index('drive_photos_drive_idx').on(t.driveId, t.createdAt)]
 );
 
+// The Media page: photos and videos of the team at work, added by admins. The files live in Cloudinary (uploaded
+// straight from the admin's browser); only their id and version are kept, and the addresses are worked out from them.
+export const mediaItems = pgTable(
+  'media_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // IMAGE or VIDEO
+    type: varchar('type', { length: 5 }).notNull(),
+    publicId: varchar('public_id', { length: 255 }).notNull().unique(),
+    version: integer('version').notNull(),
+    caption: varchar('caption', { length: 300 }),
+    uploadedBy: varchar('uploaded_by', { length: 255 }).references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => [
+    // The page lists newest first, all or one type
+    index('media_items_created_idx').on(t.createdAt),
+    index('media_items_type_created_idx').on(t.type, t.createdAt),
+  ]
+);
+
 // The bell in the app: one row per person per notification
 export const notifications = pgTable(
   'notifications',

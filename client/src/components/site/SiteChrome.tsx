@@ -9,13 +9,14 @@ import { cn } from '../../lib/cn';
 import { Logo } from '../ui/logo';
 import { ProfileDrawer } from '../ProfileDrawer';
 
-// The public pages (home and Donate) share this header, footer and button style.
+// The public pages (home, About, Media and Donate) share this header, footer and button style.
 
 export const MAP = '/map';
 export const DRIVES = '/map?open=drives';
 export const DONATE = '/donate';
 export const PLACES = '/map?open=places';
 export const ABOUT = '/about';
+export const MEDIA = '/media';
 
 /** The public pages' buttons: slightly rounded rectangles, not pills. */
 export const siteButton = (kind: 'primary' | 'secondary' | 'light', size: 'sm' | 'md' | 'lg', className?: string) =>
@@ -118,6 +119,7 @@ export const SiteHeader: React.FC<{ overPhoto?: React.RefObject<HTMLElement | nu
         </a>
         <nav className="hidden items-center gap-6 font-medium lg:flex group-data-[top=true]/header:text-white" aria-label="Site">
           <a href={ABOUT} className={link}>About</a>
+          <a href={MEDIA} className={link}>Media</a>
           <a href="/#how" className={link}>How it works</a>
           <a href="/#drives" className={link}>Drives</a>
           <a href="/#join" className={link}>Get involved</a>
@@ -185,6 +187,7 @@ export const SiteFooter: React.FC = () => {
         <nav className="flex flex-col gap-2 font-medium" aria-label="Footer">
           <h2 className="font-sans text-sm font-semibold text-muted-foreground">Explore</h2>
           <a href={ABOUT} className="hover:text-primary">About us</a>
+          <a href={MEDIA} className="hover:text-primary">Media</a>
           <a href={MAP} className="hover:text-primary">Tree map</a>
           <a href={DRIVES} className="hover:text-primary">Drives</a>
           <a href="/#how" className="hover:text-primary">How it works</a>

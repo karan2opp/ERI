@@ -84,6 +84,7 @@ Restart `npm run dev` and it picks the certificate up from `client/.cert` (git-i
 |---|---|
 | `/` | The public home page: hero photo, how it works, upcoming public drives and how to join in |
 | `/about` | About us: who we are (with the team photo), what we do, a scrolling strip of drive photos, the impact numbers, what we believe and how to join in |
+| `/media` | Photos and videos of the team at work (added by admins in Admin → Media) |
 | `/donate` | What donations pay for, with a Donate on WhatsApp button |
 | `/map` | The tree map and the app (`/map?open=drives` opens on the Drives page, `/map?open=places` on Suggest a place) |
 | `/map?open=places&form=<id>` | One place form (the link admins share) |
@@ -120,6 +121,12 @@ Notifications live in the **profile menu** (on the map and in the website header
 | A place is suggested ("Karan suggested a place for planting") | Admins and super admins, not the sender | That form in Admin → Places, with the places sent |
 
 Routes: `GET /api/v1/notifications/inbox?page=`, `GET …/inbox/unread-count`, `POST …/inbox/:id/read`, `POST …/inbox/read-all` (your own only). Each signed-in socket joins the room `user:<id>`. Needs the new `notifications` table (`npm run db:push`).
+
+## 🎞️ Media page (`/media`)
+
+A public page of photos and videos of the team at work: a heading, **All / Photos / Videos** filter chips with counts, and a grid (2 across on phones, up to 4 on a laptop) of 10 items a page, newest first (the server pages them, `GET /api/v1/media?type=&page=`). Tapping an item opens it large over the page (arrow keys or the side buttons move between the items on the page, Escape closes, a video plays with controls). The header and footer have a **Media** link.
+
+**Admins add and remove items in Admin → Media**: choose up to 10 photos and videos at a time (videos up to 100 MB, Cloudinary's limit on the free plan; photos are made smaller in the browser first), give each an optional caption, and press **Add**. Below, the items already on the page can be given a new caption (pencil) or removed (trash can: it is deleted from Cloudinary as well). Nothing is uploaded through our server: it uses the same **pre-signed upload** as every other photo (see *Photo uploads* below). The new kinds are `MEDIA` (a photo, in `plantree/media/<user>/…`) and `VIDEO` (a video, in `plantree/videos/<user>/…`), both for admins only. A video is sent to Cloudinary's `/video/upload` with its own signature (allowed formats mp4, mov, webm, m4v, 3gp); the files are not changed on upload. Cloudinary makes the browser-friendly version the first time it is asked for (`f_auto,q_auto`), and a small still picture (for a video its first frame) for the grid. The database keeps only the file's id and version (`media_items`); addresses are worked out from them. A photo or video that is uploaded but never added is cleaned up by the daily clean-up like any other.
 
 ## 📍 Suggest a place
 
@@ -220,11 +227,11 @@ Admins change them with `POST /categories`, `PATCH /categories/:id` and `DELETE 
 
 ## 📷 Photo uploads (photos never pass through our server)
 
-Every photo (a tree, a care entry, a drive picture, the pictures of a suggested place) goes **from the phone straight to Cloudinary**. That matters on a small server (Render's free instance has about 0.1 CPU): our server no longer receives, copies, hashes or forwards photo bytes, so many people planting at once only send it tiny JSON requests. There is no `multer` in the server any more. Cloudinary keys are required (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`): without them uploads answer 503 and there are no placeholder images.
+Every photo (a tree, a care entry, a drive picture, the pictures of a suggested place) and every photo or video on the Media page goes **from the phone straight to Cloudinary**. That matters on a small server (Render's free instance has about 0.1 CPU): our server no longer receives, copies, hashes or forwards photo bytes, so many people planting at once only send it tiny JSON requests. There is no `multer` in the server any more. Cloudinary keys are required (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`): without them uploads answer 503 and there are no placeholder images.
 
 **The steps** (client: `client/src/lib/uploadPhoto.ts` and `services/photoApi.ts`; server: `common/services/uploads.ts`):
 
-1. **A ticket.** `POST /api/v1/uploads/signature { kind: TREE | CARE | DRIVE | PLACE, count }` gives, for each photo, an id the server chose (`plantree/<kind>/<your user id>/<random>`) and a signed, one-hour permission to upload exactly that. The signature covers the id, the allowed formats (JPG, PNG, WEBP) and Cloudinary's resize to at most 1200 x 1200, so the browser can't change them (tested: a changed id or transformation is refused with 401). Drive pictures are for admins only. The API secret never leaves the server. A ticket is a row in `upload_tickets`.
+1. **A ticket.** `POST /api/v1/uploads/signature { kind: TREE | CARE | DRIVE | PLACE | MEDIA | VIDEO, count }` gives, for each photo, an id the server chose (`plantree/<kind>/<your user id>/<random>`) and a signed, one-hour permission to upload exactly that. The signature covers the id, the allowed formats (JPG, PNG, WEBP) and Cloudinary's resize to at most 1200 x 1200, so the browser can't change them (tested: a changed id or transformation is refused with 401). Drive pictures and everything for the Media page are for admins only (up to 10 at a time; a video is signed for Cloudinary's video upload). The API secret never leaves the server. A ticket is a row in `upload_tickets`.
 2. **The upload.** The browser sends the file to Cloudinary and gets back `{ public_id, version, signature }`.
 3. **Using it.** The app sends that reply (a few hundred bytes of JSON) with the tree, care entry, drive picture or place. The server checks the signature (only Cloudinary, with our secret, can make it) and **uses the ticket up in the same database transaction as the row that keeps the photo**, so a photo can be used once, only by the person it was issued to, and only for the kind it was issued for. If the save fails, nothing is half-done.
 
@@ -234,7 +241,7 @@ Every photo (a tree, a care entry, a drive picture, the pictures of a suggested 
 
 **Local development** needs real Cloudinary keys too. `GET /api/v1/health` says `cloudinaryConfigured`.
 
-**Database changes** (run `npm run db:push`, or this SQL in Neon; safe to run twice):
+**Database changes** (run `npm run db:push`, or this SQL in Neon; safe to run twice). The Media page (`media_items`) and old trees (`trees.is_old`) came after these; their SQL is in *Media page and old trees: database changes* below.
 
 ```sql
 BEGIN;
@@ -249,6 +256,29 @@ CREATE TABLE IF NOT EXISTS "upload_tickets" (
 CREATE INDEX IF NOT EXISTS "upload_tickets_user_idx" ON "upload_tickets" USING btree ("user_id");
 CREATE INDEX IF NOT EXISTS "upload_tickets_created_idx" ON "upload_tickets" USING btree ("created_at");
 CREATE INDEX IF NOT EXISTS "care_logs_tree_idx" ON "care_logs" USING btree ("tree_id", "performed_at");
+COMMIT;
+```
+
+## 🆕 Media page and old trees: database changes
+
+Run this in Neon before deploying (or `npm run db:push` with `DATABASE_URL_DIRECT`). Safe to run twice; it only adds things.
+
+```sql
+BEGIN;
+CREATE TABLE IF NOT EXISTS "media_items" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"type" varchar(5) NOT NULL,
+	"public_id" varchar(255) NOT NULL,
+	"version" integer NOT NULL,
+	"caption" varchar(300),
+	"uploaded_by" varchar(255),
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "media_items_public_id_unique" UNIQUE("public_id"),
+	CONSTRAINT "media_items_uploaded_by_users_id_fk" FOREIGN KEY ("uploaded_by") REFERENCES "public"."users"("id") ON DELETE set null
+);
+CREATE INDEX IF NOT EXISTS "media_items_created_idx" ON "media_items" USING btree ("created_at");
+CREATE INDEX IF NOT EXISTS "media_items_type_created_idx" ON "media_items" USING btree ("type", "created_at");
+ALTER TABLE "trees" ADD COLUMN IF NOT EXISTS "is_old" boolean DEFAULT false NOT NULL;
 COMMIT;
 ```
 

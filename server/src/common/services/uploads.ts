@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { uploadTickets } from '../db/schema';
-import { CloudinaryService, type SignedUpload } from './cloudinaryService';
+import { CloudinaryService, VIDEO_FOLDER, type SignedUpload } from './cloudinaryService';
 
 /**
  * Direct photo uploads, in four steps:
@@ -16,18 +16,24 @@ import { CloudinaryService, type SignedUpload } from './cloudinaryService';
  * Tickets nobody uses are cleaned up by uploadSweeper.ts, with the photos in them.
  */
 
-export type UploadKind = 'TREE' | 'CARE' | 'DRIVE' | 'PLACE';
-export const UPLOAD_KINDS = ['TREE', 'CARE', 'DRIVE', 'PLACE'] as const;
+// MEDIA is a photo for the Media page and VIDEO a video for it (both admin only)
+export type UploadKind = 'TREE' | 'CARE' | 'DRIVE' | 'PLACE' | 'MEDIA' | 'VIDEO';
+export const UPLOAD_KINDS = ['TREE', 'CARE', 'DRIVE', 'PLACE', 'MEDIA', 'VIDEO'] as const;
 
 const FOLDER: Record<UploadKind, string> = {
   TREE: 'plantree/trees',
   CARE: 'plantree/care_updates',
   DRIVE: 'plantree/drives',
   PLACE: 'plantree/places',
+  MEDIA: 'plantree/media',
+  // The videos folder is what marks an upload as a video (see VIDEO_FOLDER in cloudinaryService.ts)
+  VIDEO: VIDEO_FOLDER.replace(/\/$/, ''),
 };
 
 /** The most photos one place suggestion can carry. */
 export const MAX_PLACE_PHOTOS = 5;
+/** The most photos and videos an admin can add to the Media page in one go. */
+export const MAX_MEDIA_BATCH = 10;
 /** How many photo slots one person can hold at the same time (slots are used up as photos are attached). */
 export const MAX_OPEN_TICKETS = 30;
 
@@ -104,12 +110,13 @@ export async function claimUpload(tx: Executor, userId: string, kind: UploadKind
   return { url: CloudinaryService.urlFor(ref.publicId, ref.version), publicId: ref.publicId };
 }
 
-/** Whether any tree, care entry, drive picture or place is keeping this photo. */
+/** Whether any tree, care entry, drive picture, place or Media page item is keeping this photo or video. */
 export async function isPhotoInUse(publicId: string): Promise<boolean> {
   const rows = await db.execute(sql`
     select 1 as used from trees where photo_public_id = ${publicId}
     union all select 1 from care_logs where photo_public_id = ${publicId}
     union all select 1 from drive_photos where public_id = ${publicId}
+    union all select 1 from media_items where public_id = ${publicId}
     union all select 1 from place_suggestions where photos @> ${JSON.stringify([{ publicId }])}::jsonb
     limit 1`);
   return rows.length > 0;

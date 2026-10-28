@@ -26,6 +26,7 @@ import mapsRoutes from './module/maps/mapsRoutes';
 import tilesRoutes from './module/maps/tilesRoutes';
 import placeRoutes from './module/place/placeRoutes';
 import uploadRoutes from './module/upload/uploadRoutes';
+import mediaRoutes from './module/media/mediaRoutes';
 import { startUploadSweeper } from './common/services/uploadSweeper';
 
 const app = express();
@@ -79,6 +80,7 @@ app.use('/api/v1/stats', statsRoutes);
 app.use('/api/v1/site', siteRoutes);
 app.use('/api/v1/place-forms', placeRoutes);
 app.use('/api/v1/uploads', uploadRoutes);
+app.use('/api/v1/media', mediaRoutes);
 // Tiles first: they have their own (higher) rate limit
 app.use('/api/v1/maps/tiles', tilesRoutes);
 app.use('/api/v1/maps', mapsRoutes);

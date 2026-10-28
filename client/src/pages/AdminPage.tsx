@@ -8,6 +8,7 @@ import { AdminCategories } from '../components/AdminCategories';
 import { AdminSettings } from '../components/AdminSettings';
 import { AdminSiteLinks } from '../components/AdminSiteLinks';
 import { AdminPlaces } from '../components/AdminPlaces';
+import { AdminMedia } from '../components/AdminMedia';
 import { ViewerRoleContext } from '../lib/viewerRole';
 import { useUser } from '@clerk/react';
 import { formatPhone } from '../lib/phone';
@@ -25,13 +26,14 @@ import { AdminTrees } from '../components/AdminTrees';
 import { Pager } from '../components/ui/pager';
 import { Stat } from './MyTreesPage';
 
-type Tab = 'overview' | 'drives' | 'trees' | 'places' | 'categories' | 'review' | 'users' | 'socials' | 'settings';
+type Tab = 'overview' | 'drives' | 'trees' | 'places' | 'media' | 'categories' | 'review' | 'users' | 'socials' | 'settings';
 
 const TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'drives' as const, label: 'Drives' },
   { value: 'trees' as const, label: 'Trees' },
   { value: 'places' as const, label: 'Places' },
+  { value: 'media' as const, label: 'Media' },
   { value: 'categories' as const, label: 'Categories' },
   { value: 'review' as const, label: 'Review' },
   { value: 'users' as const, label: 'Users' },
@@ -230,6 +232,7 @@ export const AdminPage: React.FC<{
         )}
         {tab === 'trees' && <AdminTrees onShowOnMap={onShowTreeOnMap} />}
         {tab === 'places' && <AdminPlaces initialFormId={startFormId} />}
+        {tab === 'media' && <AdminMedia />}
         {tab === 'categories' && <AdminCategories />}
         {tab === 'review' && <AdminReview onReviewed={loadPending} />}
         {tab === 'users' && <UsersList onShowTreeOnMap={onShowTreeOnMap} initialOpenUserId={startUserId} />}
