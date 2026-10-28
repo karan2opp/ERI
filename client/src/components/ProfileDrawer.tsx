@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
-import { ArrowLeft, Bell, CalendarDays, ChevronRight, House, LogOut, MapPinPlus, Moon, Shield, Sun, Trees, UserRound, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, Bell, CalendarDays, ChevronRight, House, Images, LogOut, MapPinPlus, Moon, Shield, Sun, Trees, UserRound, Volume2, VolumeX, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
@@ -63,6 +63,8 @@ export const ProfileDrawer: React.FC<{
   compact?: boolean;
 }> = ({ role, treesPlanted, upcomingDrives, onMyTrees, onDrives, onAccount, onAdmin, onPlaces, onOpenLink, onHome, compact = false }) => {
   const isAdmin = isAdminRole(role);
+  // The Media page is public: a normal page load, the same for everyone
+  const openMedia = () => window.location.assign('/media');
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);
@@ -234,6 +236,7 @@ export const ProfileDrawer: React.FC<{
                   />
                   <NavRow icon={<Trees />} label="My trees" hint="Water and track the trees you planted" onClick={go(onMyTrees)} />
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
+                  <NavRow icon={<Images />} label="Media" hint="Photos and videos of our work" onClick={go(openMedia)} />
                   <NavRow icon={<MapPinPlus />} label="Suggest a place" hint="Tell us where to plant trees or clean up" onClick={go(onPlaces)} />
                   <NavRow icon={<UserRound />} label="Account" hint="Your details and notifications" onClick={go(onAccount)} />
                   {isAdmin && <NavRow icon={<Shield />} label="Admin" hint="Users, trees and scheduling drives" onClick={go(onAdmin)} />}
@@ -251,6 +254,7 @@ export const ProfileDrawer: React.FC<{
                 <nav className="mt-4 flex flex-col gap-1" aria-label="Drives">
                   {onHome && <NavRow icon={<House />} label="Home" hint="About us, how it works and upcoming drives" onClick={go(onHome)} />}
                   <NavRow icon={<CalendarDays />} label="Drives" hint="Plantation and clean-up drives, upcoming and past" onClick={go(onDrives)} />
+                  <NavRow icon={<Images />} label="Media" hint="Photos and videos of our work" onClick={go(openMedia)} />
                   <NavRow icon={<MapPinPlus />} label="Suggest a place" hint="Tell us where to plant trees or clean up" onClick={go(onPlaces)} />
                 </nav>
               </>
