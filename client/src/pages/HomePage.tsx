@@ -3,6 +3,7 @@ import { ArrowRight, ExternalLink, Sprout, Trash2 } from 'lucide-react';
 import type { Drive } from '../types';
 import { fetchDrivesPage } from '../services/api';
 import { driveStartsAt } from '../lib/drives';
+import { drivesToEvents, setJsonLd } from '../lib/structuredData';
 import { formatClock } from '../lib/time';
 import { cn } from '../lib/cn';
 import { Sapling } from '../components/ui/logo';
@@ -23,9 +24,15 @@ function useNumbers() {
   useEffect(() => {
     // Signed out, so only drives marked for everyone: this is a public page
     fetchDrivesPage({ page: 1, limit: 3, when: 'upcoming' }).then(
-      (r) => setUpcoming(r.data),
+      (r) => {
+        setUpcoming(r.data);
+        // Tells Google about the upcoming drives, so they can show up as events in its results
+        const events = drivesToEvents(r.data, window.location.origin);
+        setJsonLd('ld-upcoming-drives', events.length ? events : null);
+      },
       () => setDriveError(true)
     );
+    return () => setJsonLd('ld-upcoming-drives', null);
   }, []);
 
   return { upcoming, driveError };

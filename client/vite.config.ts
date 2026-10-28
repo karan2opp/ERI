@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import fs from 'node:fs'
+import { seoPlugin } from './seo-plugin.ts'
 import { fileURLToPath } from 'node:url'
 
 // Dev HTTPS. A locally trusted certificate in client/.cert (made with mkcert, see the README) lets
@@ -16,6 +17,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    seoPlugin(),
     ...(trustedCert ? [] : [basicSsl()])
   ],
   server: {

@@ -56,13 +56,7 @@ const DRIVE_PHOTOS: SliderPhoto[] = (
 export const AboutPage: React.FC = () => {
   const joinTeamUrl = useSiteInfo()?.joinTeamFormUrl ?? '';
 
-  useEffect(() => {
-    const previous = document.title;
-    document.title = 'About us · Earth Revival Initiative';
-    return () => {
-      document.title = previous;
-    };
-  }, []);
+  // The page's title and description are in its HTML, written at build time from seo.config.ts (so search engines and link previews get them without running this code)
 
   return (
     <div className="min-h-dvh bg-background">

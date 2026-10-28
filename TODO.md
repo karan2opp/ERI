@@ -60,6 +60,15 @@ Built (see "Done recently"). Still open, only when traffic needs it (not needed 
 - [ ] A real domain with HTTPS on both sides, and your domain verified in Resend
 - [ ] Error tracking (for example Sentry) and uptime monitoring
 
+### Search engines (things only the site owner can do)
+- [ ] **Google Search Console** (search.google.com/search-console): add the site as a *Domain* property (verify with the DNS record it gives you), then **Sitemaps → add `sitemap.xml`**, and use **URL Inspection → Request indexing** on `/`, `/about`, `/media` and `/donate`. This is what makes Google find the site quickly
+- [ ] **Bing Webmaster Tools** (bing.com/webmasters): import the site from Search Console. It also feeds DuckDuckGo and others
+- [ ] **One address:** in Vercel → Domains, make `earthrevivalinitiative.in` redirect to `www.earthrevivalinitiative.in` (or the other way round), so search engines see a single site
+- [ ] **Google Business Profile** (business.google.com): create a listing for the NGO with the website link. It is what shows the side panel and map result for "Earth Revival Initiative"
+- [ ] **Links to the site:** put the website address in the Instagram and YouTube profiles, the join form, and any news, college or partner pages that mention the NGO. Links from other sites are the biggest thing that moves rankings for searches like "plantation drive"
+- [ ] **Words people search:** add the city or area where the drives are held to the home page text and the drive titles (for example "Plantation drive in <city>"), and write what each drive was in its summary. Searches like "plantation drive near me" depend on this
+- [ ] After deploying, check a page's preview at developers.facebook.com/tools/debug and the markup at search.google.com/test/rich-results
+
 ### Before the site goes public
 - [ ] **Media page in production:** run the SQL in the README under *Media page and old trees: database changes* in Neon (it creates `media_items` and adds `trees.is_old`) before deploying. Then add the first photos and videos in Admin → Media. Videos are limited to 100 MB by Cloudinary's free plan; a larger plan allows bigger files
 - [ ] **Old trees in production:** run `ALTER TABLE "trees" ADD COLUMN IF NOT EXISTS "is_old" boolean DEFAULT false NOT NULL;` in Neon before deploying. Every tree already there counts as new, so the home page keeps showing 616 + the trees on the map. When all 616 old trees are marked, set Admin → Settings → Starting numbers → Trees planted to 0

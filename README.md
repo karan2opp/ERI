@@ -122,6 +122,18 @@ Notifications live in the **profile menu** (on the map and in the website header
 
 Routes: `GET /api/v1/notifications/inbox?page=`, `GET …/inbox/unread-count`, `POST …/inbox/:id/read`, `POST …/inbox/read-all` (your own only). Each signed-in socket joins the room `user:<id>`. Needs the new `notifications` table (`npm run db:push`).
 
+## 🔎 Search engines (SEO)
+
+The aim: people who search for "Earth Revival Initiative", "plantation drive" or "clean-up drive" find the site. The site is a React app, which search engines read less well than plain pages, so the important parts are written into the HTML when the site is built:
+
+- **A page of HTML for each public page.** `npm run build` writes `index.html` (home), `about/index.html`, `media/index.html` and `donate/index.html`, each with its own `<title>`, description, canonical address, link-preview (Open Graph / Twitter) tags and a plain-text heading with links inside `<noscript>`. Vercel serves a real file before it applies the "send everything to index.html" rewrite, so `/about` gets `about/index.html`. WhatsApp, Facebook and X don't run JavaScript, so this is also what makes each page show its own preview. **The titles and descriptions are in `client/seo.config.ts`; edit them there** (titles under about 60 characters, descriptions under about 155). `client/seo-plugin.ts` does the writing; `client/index.html` only holds the markers it fills in.
+- **Who we are.** The home page carries schema.org markup (`NGO` and `WebSite`) so Google knows the organisation and its name. Upcoming public drives are also added as schema.org `Event`s (`src/lib/structuredData.ts`) once the home page has loaded them, which is what lets Google show a plantation or clean-up drive as an event. Times are taken as India time (+05:30); a drive with no address or map pin is left out, since an Event needs a place.
+- **`robots.txt` and `sitemap.xml`** are written at build time (home, About, Media, Donate). `/map` is the app itself, not a page to search for, so Vercel sends `X-Robots-Tag: noindex` for it (`client/vercel.json`).
+- **Speed** (a search ranking factor): the map app (Leaflet, planting, Admin) is its own file, loaded only for `/map` and shared drive links (`src/MapApp.tsx`, loaded with `React.lazy` in `src/App.tsx`), so the public pages download about 40% less JavaScript.
+- The address of the site is `https://www.earthrevivalinitiative.in`. If it is ever different, set `VITE_SITE_URL` when building (Vercel → Settings → Environment Variables) so the canonical addresses, previews and sitemap use it.
+
+What only you can do (the site can't): see the steps in `TODO.md` under *Search engines*. Rankings take days to weeks after Google first sees the site, and a general search like "plantation drive" is shared with many sites; the name "Earth Revival Initiative" is the one to appear first for.
+
 ## 🎞️ Media page (`/media`)
 
 A public page of photos and videos of the team at work: a heading, **All / Photos / Videos** filter chips with counts, and a grid (2 across on phones, up to 4 on a laptop) of 10 items a page, newest first (the server pages them, `GET /api/v1/media?type=&page=`). Tapping an item opens it large over the page (arrow keys or the side buttons move between the items on the page, Escape closes, a video plays with controls). The header and footer have a **Media** link.

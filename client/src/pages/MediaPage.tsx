@@ -23,13 +23,7 @@ export const MediaPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState<number | null>(null);
 
-  useEffect(() => {
-    const previous = document.title;
-    document.title = 'Media · Earth Revival Initiative';
-    return () => {
-      document.title = previous;
-    };
-  }, []);
+  // The page's title and description are in its HTML, written at build time from seo.config.ts (so search engines and link previews get them without running this code)
 
   useEffect(() => {
     let cancelled = false;

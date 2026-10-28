@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Camera, Droplets, MapPin, MessageCircle, Shovel, Sprout } from 'lucide-react';
 import { DRIVES, SiteFooter, SiteHeader, siteButton, useSiteInfo } from '../components/site/SiteChrome';
 import { cn } from '../lib/cn';
@@ -38,13 +37,7 @@ export const DonatePage: React.FC = () => {
   const digits = info?.donateWhatsapp.replace(/\D/g, '') ?? '';
   const whatsapp = digits ? `https://wa.me/${digits}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}` : null;
 
-  useEffect(() => {
-    const previous = document.title;
-    document.title = 'Donate · Earth Revival Initiative';
-    return () => {
-      document.title = previous;
-    };
-  }, []);
+  // The page's title and description are in its HTML, written at build time from seo.config.ts (so search engines and link previews get them without running this code)
 
   const donateButton = (className?: string) =>
     whatsapp ? (
