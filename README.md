@@ -103,7 +103,7 @@ The home page has four number boxes: **trees planted**, **plantation drives**, *
 
 The four starting numbers live in the `app_settings` table (`baselineTrees`, `baselinePlantationDrives`, `baselineCleanupDrives`, `baselineWasteKg`). The server saves them the first time it starts, and admins can correct them in **Admin → Settings → Starting numbers**.
 
-The rest of this section is about the website header. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Account and Admin, which open inside the app at `/map?open=…`). On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
+The rest of this section is about the website header. The header has the same profile menu as the map (sign in, or your avatar with My trees, Drives, Media, Account and Admin, which open inside the app at `/map?open=…`). The menu always ends with **About us**, **Get involved** (`/#join`) and **Donate**, since on a phone it is the only way from the map to those pages. On Vercel, `client/vercel.json` sends every path to the app so `/map` works after a reload.
 
 **Join the team.** Admins paste the link to a Google Form in **Admin → Settings → Join the team form** (it must start with `https://`). While a link is set, the home page shows a **Join the team** button beside **Open the tree map** at the top, a **Join the team** card in Get involved and a button in the closing banner, all opening the form in a new tab; with no link, neither shows. The link is public (`GET /api/v1/site`) and stored in `app_settings`, so nothing needs a migration.
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SignInButton, useAuth, useUser } from '@clerk/react';
-import { ArrowLeft, Bell, CalendarDays, ChevronRight, House, Images, LogOut, MapPinPlus, Moon, Shield, Sun, Trees, UserRound, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowLeft, Bell, CalendarDays, ChevronRight, HandHeart, House, Images, Info, LogOut, MapPinPlus, Moon, Shield, Sun, Trees, UserRound, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { useThemeChoice, type ThemeChoice } from '../lib/theme';
 import { cn } from '../lib/cn';
 import type { Role } from '../types';
@@ -65,6 +65,8 @@ export const ProfileDrawer: React.FC<{
   const isAdmin = isAdminRole(role);
   // The Media page is public: a normal page load, the same for everyone
   const openMedia = () => window.location.assign('/media');
+  // The website's pages, for everyone: on a phone this menu is the only way from the map to them
+  const openSitePage = (path: string) => () => window.location.assign(path);
   const { isSignedIn, signOut } = useAuth();
   const { user } = useUser();
   const [open, setOpen] = useState(false);
@@ -259,6 +261,12 @@ export const ProfileDrawer: React.FC<{
                 </nav>
               </>
             )}
+
+            <nav className="mt-2 flex flex-col gap-1 border-t border-border pt-2" aria-label="About Earth Revival Initiative">
+              <NavRow icon={<Info />} label="About us" hint="Who we are and what we do" onClick={go(openSitePage('/about'))} />
+              <NavRow icon={<Users />} label="Get involved" hint="Join the team, a drive or a clean-up" onClick={go(openSitePage('/#join'))} />
+              <NavRow icon={<HandHeart />} label="Donate" hint="Help us plant and care for trees" onClick={go(openSitePage('/donate'))} />
+            </nav>
 
             <section className="mt-4 flex flex-col gap-2 px-2" aria-labelledby="drawer-appearance">
               <h3 id="drawer-appearance" className="font-sans text-sm font-medium text-muted-foreground">Appearance</h3>

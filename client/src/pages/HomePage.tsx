@@ -111,6 +111,20 @@ export const HomePage: React.FC = () => {
   const joinTeamUrl = useSiteInfo()?.joinTeamFormUrl ?? '';
   const heroRef = useRef<HTMLElement>(null);
 
+  // A link like /#join from another page: the browser tries to scroll before this page has been drawn, so do it once it has
+  // (and again a moment later, in case pictures loading moved things)
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (!id) return;
+    const scroll = () => document.getElementById(id)?.scrollIntoView();
+    const first = window.setTimeout(scroll, 50);
+    const second = window.setTimeout(scroll, 700);
+    return () => {
+      window.clearTimeout(first);
+      window.clearTimeout(second);
+    };
+  }, []);
+
   // The in-page links glide down; undone when leaving so the map app is unaffected
   useEffect(() => {
     document.documentElement.style.scrollBehavior = 'smooth';
