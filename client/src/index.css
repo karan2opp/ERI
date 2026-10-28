@@ -10,7 +10,9 @@
  * Colour carries meaning:
  *   primary  globe green  main actions, selected chips (white text on it)
  *   leaf     leaf green   healthy trees, success, the walking route
- *   thirsty  water blue   trees that need water (shown with a water-drop icon)
+ *   thirsty  alert red    trees that need water (shown with a water-drop icon)
+ *   fertilize orange      trees that need fertiliser (sprout icon)
+ *   weed     teal         trees that need the grass around them removed (shovel icon)
  *   warning  amber        low health
  *   water    river blue   water/care actions, live walkers
  *   bark     brown        plantation drives (clean-up drives are purple)
@@ -37,11 +39,13 @@
   --destructive: #c63d21;
   --leaf: #518321;
   --sprout: #729537;
-  --thirsty: #2f7fb8;
+  --thirsty: #d32f2f;
   --thirsty-foreground: #ffffff;
+  --fertilize: #c96a00;
+  --weed: #00796b;
   --warning: #e09a1c;
   --water: #2f7fb8;
-  --you: #e53935;
+  --you: #1a73e8;
   --cleanup: #7a4fd6;
   --bark: #7a5638;
   --map: #eef2ea;
@@ -68,10 +72,12 @@
   --destructive: #f0714f;
   --leaf: #8fbf5a;
   --sprout: #a9c97a;
-  --thirsty: #6ab0e3;
+  --thirsty: #ff6b66;
+  --fertilize: #f0a04b;
+  --weed: #4db6ac;
   --warning: #f0b13e;
   --water: #6ab0e3;
-  --you: #ff6b66;
+  --you: #5aa9ff;
   --cleanup: #b095ff;
   --bark: #c49a6c;
   --map: #17231c;
@@ -103,6 +109,8 @@
   --color-sprout: var(--sprout);
   --color-thirsty: var(--thirsty);
   --color-thirsty-foreground: var(--thirsty-foreground);
+  --color-fertilize: var(--fertilize);
+  --color-weed: var(--weed);
   --color-warning: var(--warning);
   --color-water: var(--water);
   --color-bark: var(--bark);
@@ -219,10 +227,12 @@
   cursor: pointer;
 }
 .pt-pin[data-status="healthy"] { background: var(--leaf); }
+.pt-pin[data-status="fertilize"] { background: var(--fertilize); }
+.pt-pin[data-status="weed"] { background: var(--weed); }
 .pt-pin[data-status="drive"] { background: var(--bark); }
 .pt-pin[data-status="cleanup"] { background: var(--cleanup); }
 
-/* Several trees in one bubble, with a blue badge for how many need water */
+/* Several trees in one bubble, with a badge for how many need care, in the colour of the most urgent need (red water, orange fertiliser, teal grass) */
 .pt-cluster {
   position: relative;
   display: grid;
@@ -256,12 +266,14 @@
   text-align: center;
   border: 2px solid var(--background);
 }
+.pt-cluster-water[data-need="fertilize"] { background: var(--fertilize); }
+.pt-cluster-water[data-need="weed"] { background: var(--weed); }
 .pt-pin[data-selected="true"] {
   transform: scale(1.25);
   box-shadow: 0 0 0 2px var(--foreground), var(--elev-float);
 }
 
-/* Trees that need water: the pin is a blue water drop with the tree inside */
+/* Trees that need water: the pin is a red water drop with the tree inside */
 .pt-droppin {
   display: block;
   width: 40px;
@@ -283,9 +295,8 @@
   stroke: var(--foreground);
 }
 
-/* You: a red dot with a white ring, a pulse, and a cone pointing where you face. Red is used for
-   nothing else on the map (trees are green or blue drops, drives are brown), so you never mistake
-   yourself for a tree. */
+/* You: a blue dot with a white ring, a pulse, and a cone pointing where you face. Red is kept for
+   trees that need water (red drops), so you never mistake yourself for a thirsty tree. */
 .pt-you {
   position: relative;
   width: 72px;

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Circle, MapContainer, Marker, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import type { Drive, LatLng } from '../../types';
-import type { TreeStatus } from '../../lib/trees';
+import { STATUS_LABEL, type TreeStatus } from '../../lib/trees';
 import type { PinCluster, PinsResult, TreePin } from '../../services/api';
-import type { MapView } from '../../lib/pins';
+import { pinNeed, type MapView } from '../../lib/pins';
 import { useIsDark, useThemeColors } from '../../lib/theme';
 import type { TileSource } from '../../lib/tiles';
 import { GoogleCredit } from './MapCredit';
@@ -24,6 +24,9 @@ const TREE_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/></svg>';
 const BIN_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>';
+// lucide "shovel": the marker for a tree whose grass needs removing
+const SHOVEL_SVG =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.56 4.56a1.5 1.5 0 0 1 0 2.122l-.47.47a3 3 0 0 1-4.212-.03 3 3 0 0 1 0-4.243l.44-.44a1.5 1.5 0 0 1 2.121 0z"/><path d="M3 22a1 1 0 0 1-1-1v-3.586a1 1 0 0 1 .293-.707l3.355-3.355a1.205 1.205 0 0 1 1.704 0l3.296 3.296a1.205 1.205 0 0 1 0 1.704l-3.355 3.355a1 1 0 0 1-.707.293z"/><path d="m9 15 7.879-7.878"/></svg>';
 const SPROUT_SVG =
   '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></svg>';
 
@@ -31,12 +34,15 @@ const SPROUT_SVG =
 // the look, including the grow-when-selected scale, lives on the inner .pt-pin.
 const iconCache = new Map<string, L.DivIcon>();
 
-// A blue water drop (lucide "droplet" outline) with the tree drawn inside its round part
+// A red water drop (lucide "droplet" outline) with the tree drawn inside its round part
 const waterDropPin = (selected: boolean, label: string) =>
   `<svg class="pt-droppin" viewBox="0 0 24 24" role="button" aria-label="${label}, needs water" data-selected="${selected}">` +
   '<path class="pt-drop-body" d="M12 22.6a7.6 7.6 0 0 0 7.6-7.6c0-2.2-1.1-4.2-3.2-5.9S12.6 4.8 12 1.6c-.6 2.7-2.2 5.3-4.4 7.1C5.5 10.6 4.4 12.8 4.4 15a7.6 7.6 0 0 0 7.6 7.6z"/>' +
   '<g transform="translate(7.4 10.2) scale(0.385)" fill="none" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/></g></svg>';
+
+// Trees that need fertiliser or the grass removed are coloured circles (orange sprout, teal shovel); water is the red drop
+const PIN_GLYPH: Record<string, string> = { healthy: TREE_SVG, drive: SPROUT_SVG, cleanup: BIN_SVG, fertilize: SPROUT_SVG, weed: SHOVEL_SVG };
 
 const pinIcon = (status: TreeStatus | 'drive' | 'cleanup', selected: boolean, label: string) => {
   const key = `${status}-${selected}-${label}`;
@@ -46,7 +52,7 @@ const pinIcon = (status: TreeStatus | 'drive' | 'cleanup', selected: boolean, la
       status === 'thirsty'
         ? L.divIcon({ html: waterDropPin(selected, label), className: 'pt-marker', iconSize: [40, 46], iconAnchor: [20, 30] })
         : L.divIcon({
-            html: `<div class="pt-pin" role="button" aria-label="${label}" data-status="${status}" data-selected="${selected}">${status === 'drive' ? SPROUT_SVG : status === 'cleanup' ? BIN_SVG : TREE_SVG}</div>`,
+            html: `<div class="pt-pin" role="button" aria-label="${status === 'fertilize' || status === 'weed' ? `${label}, ${STATUS_LABEL[status].toLowerCase()}` : label}" data-status="${status}" data-selected="${selected}">${PIN_GLYPH[status]}</div>`,
             className: 'pt-marker',
             iconSize: [36, 36],
             iconAnchor: [18, 18],
@@ -161,23 +167,31 @@ const Route: React.FC<{ line: [number, number][] }> = ({ line }) => {
   );
 };
 
-// A bubble for several trees: the count, plus how many of them need water
-const clusterIcon = (count: number, thirsty: number) =>
-  L.divIcon({
+// A bubble for several trees: the count, plus a badge with how many of them need care. The badge takes the
+// colour of the most urgent need among them (water, then fertiliser, then grass).
+const clusterIcon = (cluster: PinCluster) => {
+  const { count, thirsty } = cluster;
+  const fertilize = cluster.fertilize ?? 0;
+  const weed = cluster.weed ?? 0;
+  const needy = thirsty + fertilize + weed;
+  const need = thirsty ? 'thirsty' : fertilize ? 'fertilize' : 'weed';
+  const parts = [thirsty && `${thirsty} need water`, fertilize && `${fertilize} need fertiliser`, weed && `${weed} need grass removal`].filter(Boolean);
+  return L.divIcon({
     html:
-      `<div class="pt-cluster" data-size="${count >= 1000 ? 'l' : count >= 100 ? 'm' : 's'}" role="button" aria-label="${count} trees${thirsty ? `, ${thirsty} need water` : ''}. Zoom in">` +
+      `<div class="pt-cluster" data-size="${count >= 1000 ? 'l' : count >= 100 ? 'm' : 's'}" role="button" aria-label="${count} trees${parts.length ? `, ${parts.join(', ')}` : ''}. Zoom in">` +
       `<span>${count >= 10000 ? Math.round(count / 1000) + 'k' : count}</span>` +
-      (thirsty ? `<span class="pt-cluster-water">${thirsty >= 1000 ? Math.round(thirsty / 1000) + 'k' : thirsty}</span>` : '') +
+      (needy ? `<span class="pt-cluster-water" data-need="${need}">${needy >= 1000 ? Math.round(needy / 1000) + 'k' : needy}</span>` : '') +
       '</div>',
     className: 'pt-marker',
     iconSize: [48, 48],
     iconAnchor: [24, 24],
   });
+};
 
 const TreePinMarker: React.FC<{ pin: TreePin; selected: boolean; onSelect: (pin: TreePin) => void }> = ({ pin, selected, onSelect }) => (
   <Marker
     position={[pin.lat, pin.lng]}
-    icon={pinIcon(pin.needsWater ? 'thirsty' : 'healthy', selected, pin.name)}
+    icon={pinIcon(pinNeed(pin) ?? 'healthy', selected, pin.name)}
     zIndexOffset={selected ? 500 : 0}
     eventHandlers={{ click: () => onSelect(pin) }}
     keyboard
@@ -191,7 +205,7 @@ const ClusterMarker: React.FC<{ cluster: PinCluster }> = ({ cluster }) => {
   return (
     <Marker
       position={[cluster.lat, cluster.lng]}
-      icon={clusterIcon(cluster.count, cluster.thirsty)}
+      icon={clusterIcon(cluster)}
       // Centred in the part of the map you can see (above the sheet on phones)
       eventHandlers={{
         click: () => {
@@ -286,7 +300,7 @@ export const TreeMap: React.FC<TreeMapProps> = ({
   if (pins?.kind === 'trees') treePins.push(...pins.data);
   else if (pins?.kind === 'clusters') {
     for (const c of pins.data) {
-      if (c.count === 1 && c.id) treePins.push({ id: c.id, lat: c.lat, lng: c.lng, name: c.name ?? 'Tree', needsWater: c.thirsty > 0 });
+      if (c.count === 1 && c.id) treePins.push({ id: c.id, lat: c.lat, lng: c.lng, name: c.name ?? 'Tree', needs: c.thirsty ? 'thirsty' : c.fertilize ? 'fertilize' : c.weed ? 'weed' : null, needsWater: c.thirsty > 0 });
       else clusters.push(c);
     }
   }

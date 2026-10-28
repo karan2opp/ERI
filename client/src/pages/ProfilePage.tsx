@@ -32,7 +32,7 @@ export const ProfilePage: React.FC<{
   phone: string | null;
   onPhoneChanged: (phone: string | null) => void;
   /** How many trees you planted, and how many of them need water */
-  myTreeSummary: { total: number; thirsty: number } | null;
+  myTreeSummary: { total: number; thirsty: number; needy?: number } | null;
   onClose: () => void;
   onProfileChanged: () => void;
 }> = ({
@@ -114,7 +114,7 @@ export const ProfilePage: React.FC<{
   };
 
   const planted = myTreeSummary?.total ?? 0;
-  const healthy = Math.max(0, planted - (myTreeSummary?.thirsty ?? 0));
+  const healthy = Math.max(0, planted - (myTreeSummary?.needy ?? myTreeSummary?.thirsty ?? 0));
   const signInMethods = user.externalAccounts.map((a) => a.provider.replace(/^oauth_/, '')).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
 
   return (

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { SignInButton, useUser } from '@clerk/react';
-import { Camera, Droplets, Navigation, Pencil, Radio, Trash2, X } from 'lucide-react';
+import { Camera, Droplets, Navigation, Pencil, Radio, Shovel, Sprout, Trash2, X } from 'lucide-react';
 import type { LatLng, Role, Tree } from '../../types';
 import { careLock } from '../../lib/schedule';
 import { isAdminRole } from '../../lib/roles';
 import { deleteTree } from '../../services/api';
 import { logCareActivity } from '../../services/photoApi';
-import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, hoursSinceWatered, timeAgo, treeStatus, type CareAction } from '../../lib/trees';
+import { CARE_ACTIONS, CARE_LABEL, STATUS_LABEL, timeAgo, treeNeeds, type CareAction } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters, walkHint } from '../../utils/geo';
 import { Badge } from '../ui/badge';
 import { ExpandableText } from '../ui/expandable-text';
@@ -21,6 +21,13 @@ import { CameraCapture } from '../CameraCapture';
 
 
 type Outcome = { tone: 'success' | 'error'; text: string } | null;
+
+/** For each need: the care that meets it, when it was last done, and how to say so. */
+const NEED_TASK = {
+  thirsty: { action: 'WATERED', last: 'lastWateredAt', done: 'watered', lastText: 'Last watered', never: 'No care logged yet', icon: <Droplets aria-hidden="true" /> },
+  fertilize: { action: 'FERTILIZED', last: 'lastFertilizedAt', done: 'fertilised', lastText: 'Last fertilised', never: 'Not fertilised since it was planted', icon: <Sprout aria-hidden="true" /> },
+  weed: { action: 'WEEDED', last: 'lastWeededAt', done: 'grass removed', lastText: 'Grass last removed', never: 'The grass has not been removed since it was planted', icon: <Shovel aria-hidden="true" /> },
+} as const;
 
 const errorText = (err: unknown, fallback: string) => {
   const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -150,14 +157,14 @@ export const TreeDetails: React.FC<{
 }> = ({ tree, you, onClose, onDirections, onWalkLive, onEdit, onChanged, onDeleted, role }) => {
   const { user, isSignedIn } = useUser();
   const [caring, setCaring] = useState(false);
-  const [watering, setWatering] = useState(false);
+  // The care a one-tap button is saving right now
+  const [quick, setQuick] = useState<CareAction | null>(null);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
 
-  const status = treeStatus(tree);
-  const hours = hoursSinceWatered(tree);
+  const needs = treeNeeds(tree);
   const meters = you ? getDistanceInMeters(you.lat, you.lng, tree.latitude, tree.longitude) : null;
   const isOwner = Boolean(isSignedIn && user && (user.id === tree.userId || user.id === tree.owner?.id));
   // The planter manages their tree; admins and super admins manage every tree
@@ -182,15 +189,15 @@ export const TreeDetails: React.FC<{
     }
   };
 
-  const quickWater = async () => {
-    setWatering(true);
+  const quickCare = async (action: CareAction) => {
+    setQuick(action);
     try {
-      await logCareActivity(tree.id, { actionType: 'WATERED' });
-      careDone({ tone: 'success', text: `Watered. Thanks for looking after ${tree.name}.` });
+      await logCareActivity(tree.id, { actionType: action });
+      careDone({ tone: 'success', text: `${CARE_LABEL[action]}. Thanks for looking after ${tree.name}.` });
     } catch (err) {
       setOutcome({ tone: 'error', text: errorText(err, "Couldn't save that. Try again.") });
     } finally {
-      setWatering(false);
+      setQuick(null);
     }
   };
 
@@ -219,7 +226,7 @@ export const TreeDetails: React.FC<{
           <h2 className="text-xl leading-tight">{tree.name}</h2>
           <p className="truncate text-muted-foreground">{tree.species}</p>
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant={status}>{STATUS_LABEL[status]}</Badge>
+            {needs.length ? needs.map((n) => <Badge key={n} variant={n}>{STATUS_LABEL[n]}</Badge>) : <Badge variant="healthy">{STATUS_LABEL.healthy}</Badge>}
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close tree details" className="-mt-1 -mr-2">
@@ -227,19 +234,24 @@ export const TreeDetails: React.FC<{
         </Button>
       </div>
 
-      {status === 'thirsty' && (
-        <Alert
-          tone="thirsty"
-          title="Needs water"
-          action={gated(
-            <Button variant="secondary" onClick={isSignedIn ? quickWater : undefined} disabled={watering} aria-label="Mark as watered">
-              {watering ? <Spinner className="size-4" /> : <Droplets aria-hidden="true" />} Watered
-            </Button>
-          )}
-        >
-          {hours === null ? 'No care logged yet' : `Last watered ${timeAgo(tree.lastWateredAt!)}`}
-        </Alert>
-      )}
+      {needs.map((need) => {
+        const task = NEED_TASK[need];
+        const last = tree[task.last];
+        return (
+          <Alert
+            key={need}
+            tone={need}
+            title={STATUS_LABEL[need]}
+            action={gated(
+              <Button variant="secondary" onClick={isSignedIn ? () => quickCare(task.action) : undefined} disabled={quick !== null} aria-label={`Mark as ${task.done}`}>
+                {quick === task.action ? <Spinner className="size-4" /> : task.icon} {CARE_LABEL[task.action]}
+              </Button>
+            )}
+          >
+            {last ? `${task.lastText} ${timeAgo(last)}` : task.never}
+          </Alert>
+        );
+      })}
 
       {meters !== null && (
         <div className="flex items-baseline gap-2">

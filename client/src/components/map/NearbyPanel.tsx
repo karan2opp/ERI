@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { MapPin, Plus, Search, X } from 'lucide-react';
 import type { Tree, LatLng } from '../../types';
 import { useSearch } from '../../lib/search';
-import { browseTrees, type Paged } from '../../services/api';
+import { browseTrees, type Paged, type TreeStatusFilter } from '../../services/api';
 import { cn } from '../../lib/cn';
 import { Pager } from '../ui/pager';
-import { STATUS_LABEL, shortSpecies, treeStatus } from '../../lib/trees';
+import { STATUS_LABEL, shortSpecies, treeNeeds, treeStatus } from '../../lib/trees';
 import { formatDistance, getDistanceInMeters } from '../../utils/geo';
 import { Chips } from '../ui/chips';
 import { StatusDot } from '../ui/badge';
@@ -15,7 +15,17 @@ import { Sapling } from '../ui/logo';
 import { Spinner } from '../ui/spinner';
 
 export type DistanceFilter = 'ALL' | '100' | '500' | '1000';
-export type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
+export type StatusFilter = 'ALL' | 'THIRSTY' | 'FERTILIZE' | 'WEED' | 'HEALTHY' | 'MINE';
+
+/** What the server is asked for each filter chip ("Mine" is a separate flag, so it asks for all). */
+export const STATUS_PARAM: Record<StatusFilter, TreeStatusFilter> = {
+  ALL: 'all',
+  THIRSTY: 'thirsty',
+  FERTILIZE: 'fertilize',
+  WEED: 'weed',
+  HEALTHY: 'healthy',
+  MINE: 'all',
+};
 
 const PAGE_SIZE = 10;
 
@@ -31,6 +41,8 @@ const distanceTo = (you: LatLng | null, t: Tree) => (you ? getDistanceInMeters(y
 /** One tree in a list: status dot, name, species and status, distance on the right. */
 export const TreeRow: React.FC<{ tree: Tree & { distance?: number }; you: LatLng | null; onSelect: (tree: Tree) => void }> = ({ tree, you, onSelect }) => {
   const status = treeStatus(tree);
+  // Everything it needs, most urgent first: "Needs water, needs fertiliser"
+  const statusText = treeNeeds(tree).map((n, i) => (i === 0 ? STATUS_LABEL[n] : STATUS_LABEL[n].toLowerCase())).join(', ') || STATUS_LABEL.healthy;
   // The server works out the distance for listed trees; trees from the map are measured here
   const meters = tree.distance ?? distanceTo(you, tree);
   return (
@@ -44,7 +56,7 @@ export const TreeRow: React.FC<{ tree: Tree & { distance?: number }; you: LatLng
         <span className="min-w-0 flex-1">
           <span className="block truncate text-lg font-medium">{tree.name}</span>
           <span className="block truncate text-muted-foreground">
-            {shortSpecies(tree.species)} · {STATUS_LABEL[status]}
+            {shortSpecies(tree.species)} · {statusText}
           </span>
         </span>
         {meters !== null && <span className="shrink-0 text-lg tabular-nums">{formatDistance(meters)}</span>}
@@ -94,7 +106,7 @@ export const NearbyPanel: React.FC<{
       limit: PAGE_SIZE,
       near: you,
       radius,
-      status: status === 'THIRSTY' ? 'thirsty' : status === 'HEALTHY' ? 'healthy' : 'all',
+      status: STATUS_PARAM[status],
       mine: status === 'MINE',
     }).then(
       (res) => {

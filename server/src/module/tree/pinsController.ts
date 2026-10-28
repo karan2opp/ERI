@@ -4,7 +4,7 @@ import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../common/db';
 import { trees } from '../../common/db/schema';
-import { needsWater } from '../../common/utils/careSchedule';
+import { TREE_STATUSES, statusCondition, topNeed, type TreeStatusFilter } from '../../common/utils/careSchedule';
 import { latitudeSchema, longitudeSchema } from '../../common/utils/validation';
 
 /** At this zoom and closer, the map gets one pin per tree; further out it gets clusters. */
@@ -29,7 +29,7 @@ const pinsQuery = z
     lat: latitudeSchema.optional(),
     lng: longitudeSchema.optional(),
     radius: z.coerce.number().positive().max(5000).optional(),
-    status: z.enum(['all', 'thirsty', 'healthy']).default('all'),
+    status: z.enum(TREE_STATUSES).default('all'),
     mine: z.enum(['true', 'false']).optional(),
   })
   .refine((q) => q.bbox || (q.lat !== undefined && q.lng !== undefined && q.radius), 'Send a bbox, or lat, lng and radius');
@@ -46,12 +46,12 @@ const distanceFrom = (lat: number, lng: number) =>
  * GET /trees/pins: what the map needs to draw, and nothing more.
  *
  * - With `bbox` and `zoom`: the trees in the visible area. Zoomed in (zoom >= 14) it returns one small
- *   row per tree (id, position, name, needs water). Zoomed out it returns clusters: one row per grid
+ *   row per tree (id, position, name, what it needs). Zoomed out it returns clusters: one row per grid
  *   cell with a count, so a whole city is a few dozen rows.
  * - With `lat`, `lng` and `radius`: every tree within that many metres (the distance filters), nearest first.
  * - If more than 500 trees would come back, the answer is clusters instead, so every tree is still counted.
  *
- * Filters: status (needs water / healthy) and mine. Only verified trees, like the rest of the map.
+ * Filters: status (needs water / fertiliser / grass removal, or healthy: needs none) and mine. Only verified trees, like the rest of the map.
  * Answers can be reused by the browser for 30 seconds.
  */
 export const getTreePins = async (req: Request, res: Response) => {
@@ -70,8 +70,8 @@ export const getTreePins = async (req: Request, res: Response) => {
   try {
     const filters: SQL[] = [eq(trees.verificationStatus, 'VERIFIED')];
     if (userId) filters.push(eq(trees.userId, userId));
-    if (q.status === 'thirsty') filters.push(needsWater);
-    if (q.status === 'healthy') filters.push(sql`NOT ${needsWater}`);
+    const byStatus = statusCondition(q.status);
+    if (byStatus) filters.push(byStatus);
 
     const radiusMode = q.radius !== undefined && q.lat !== undefined && q.lng !== undefined;
     let distance: SQL<number> | null = null;
@@ -96,19 +96,21 @@ export const getTreePins = async (req: Request, res: Response) => {
     // ---- Zoomed in, or a distance filter: one row per tree, unless there are too many to draw
     if (radiusMode || q.zoom >= CLUSTER_BELOW_ZOOM) {
       const rows = await db
-        .select({ id: trees.id, lat: trees.latitude, lng: trees.longitude, name: trees.name, needsWater: sql<boolean>`${needsWater}` })
+        .select({ id: trees.id, lat: trees.latitude, lng: trees.longitude, name: trees.name, needs: topNeed(q.status) })
         .from(trees)
         .where(where)
         .orderBy(distance ? asc(distance) : asc(trees.id))
         .limit(MAX_PINS + 1);
       if (rows.length <= MAX_PINS) {
-        return res.status(200).json({ success: true, kind: 'trees', data: rows, empty: rows.length === 0 ? await noTreesAtAll() : false });
+        // `needsWater` stays for a browser that was loaded before `needs` existed
+        const data = rows.map((r) => ({ ...r, needsWater: r.needs === 'thirsty' }));
+        return res.status(200).json({ success: true, kind: 'trees', data, empty: rows.length === 0 ? await noTreesAtAll() : false });
       }
       // More than 500 in view (a dense area): fall through to clusters, so every tree is still counted
     }
 
     // ---- Zoomed out, or too many trees in view: clusters
-    const clusters = await clusterRows(where, q.zoom);
+    const clusters = await clusterRows(where, q.zoom, q.status);
     res.status(200).json({ success: true, kind: 'clusters', data: clusters, empty: clusters.length === 0 ? await noTreesAtAll() : false });
   } catch (err) {
     console.error('Error loading tree pins:', err);
@@ -117,7 +119,8 @@ export const getTreePins = async (req: Request, res: Response) => {
 };
 
 /** Groups the matching trees into grid cells about 80 screen pixels wide at this zoom. */
-async function clusterRows(where: SQL | undefined, zoom: number) {
+async function clusterRows(where: SQL | undefined, zoom: number, status: TreeStatusFilter) {
+  const need = topNeed(status);
   // The cell size is a number we compute from the zoom, never user text
   const cell = sql.raw(String(((360 / 2 ** zoom) * CLUSTER_CELL_PX) / 256));
   const cellX = sql`floor(${trees.longitude} / ${cell})`;
@@ -127,7 +130,10 @@ async function clusterRows(where: SQL | undefined, zoom: number) {
       lat: sql<number>`avg(${trees.latitude})`,
       lng: sql<number>`avg(${trees.longitude})`,
       count: sql<number>`count(*)`,
-      thirsty: sql<number>`count(*) filter (where ${needsWater})`,
+      // How many trees in the cell show each kind of pin (a tree that needs several counts once, as its first need)
+      thirsty: sql<number>`count(*) filter (where ${need} = 'thirsty')`,
+      fertilize: sql<number>`count(*) filter (where ${need} = 'fertilize')`,
+      weed: sql<number>`count(*) filter (where ${need} = 'weed')`,
       // A cell with a single tree is drawn as that tree's pin
       id: sql<string | null>`case when count(*) = 1 then min(${trees.id}::text) end`,
       name: sql<string | null>`case when count(*) = 1 then min(${trees.name}) end`,
@@ -141,6 +147,8 @@ async function clusterRows(where: SQL | undefined, zoom: number) {
     lng: Number(r.lng),
     count: Number(r.count),
     thirsty: Number(r.thirsty),
+    fertilize: Number(r.fertilize),
+    weed: Number(r.weed),
     ...(r.id ? { id: r.id, name: r.name } : {}),
   }));
 }

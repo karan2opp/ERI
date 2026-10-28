@@ -18,7 +18,7 @@ import { GoogleCredit } from './components/map/MapCredit';
 import { TreeMap, type FlyToTarget } from './components/map/TreeMap';
 import { MapSheet, type SheetState } from './components/map/MapSheet';
 import { ItemPeek, NavigationPeek, SearchPeek } from './components/map/SheetPeek';
-import { NearbyPanel, type DistanceFilter } from './components/map/NearbyPanel';
+import { NearbyPanel, STATUS_PARAM, type DistanceFilter, type StatusFilter } from './components/map/NearbyPanel';
 import { TreeDetails } from './components/map/TreeDetails';
 import { DriveDetails } from './components/map/DriveDetails';
 import { NavigationCard, NavigationPanel } from './components/map/NavigationPanel';
@@ -43,7 +43,6 @@ import { PlacesPage } from './pages/PlacesPage';
 import { Page } from './components/ui/top-bar';
 import { Spinner } from './components/ui/spinner';
 
-type StatusFilter = 'ALL' | 'THIRSTY' | 'HEALTHY' | 'MINE';
 type Screen = 'map' | 'plant' | 'edit' | 'myTrees' | 'account' | 'admin' | 'drives' | 'places';
 type Selection = { kind: 'tree' | 'drive'; id: string } | null;
 type Destination = { name: string; at: LatLng };
@@ -312,7 +311,7 @@ function MapApp() {
   // Bumped after a change, so the map skips its 30-second cached answer and shows the change at once
   const [pinsVersion, setPinsVersion] = useState(0);
   // Your tree counts (profile drawer and Account), from the server
-  const [myTreeSummary, setMyTreeSummary] = useState<{ total: number; thirsty: number } | null>(null);
+  const [myTreeSummary, setMyTreeSummary] = useState<{ total: number; thirsty: number; needy?: number } | null>(null);
   // Pins only carry what the map draws; the selected tree's full details are fetched when it's tapped
   const [selectedTreeData, setSelectedTreeData] = useState<Tree | null>(null);
   const selectionRef = useRef<Selection>(null);
@@ -334,9 +333,8 @@ function MapApp() {
   useEffect(() => {
     if (!mapView) return;
     const radius = distance === 'ALL' ? null : Number(distance);
-    const statusParam = status === 'THIRSTY' ? 'thirsty' : status === 'HEALTHY' ? 'healthy' : 'all';
     const zoom = Math.floor(mapView.zoom);
-    const common = { zoom, status: statusParam as 'all' | 'thirsty' | 'healthy', mine: status === 'MINE', v: pinsVersion };
+    const common = { zoom, status: STATUS_PARAM[status], mine: status === 'MINE', v: pinsVersion };
     // Rounded to about 10 m, so GPS jitter doesn't refetch
     const params = radius && you ? { ...common, lat: Number(you.lat.toFixed(4)), lng: Number(you.lng.toFixed(4)), radius } : { ...common, bbox: snapToTiles(mapView) };
     const controller = new AbortController();
@@ -682,6 +680,8 @@ function MapApp() {
   const statusOptions = [
     { value: 'ALL' as const, label: 'All' },
     { value: 'THIRSTY' as const, label: 'Needs water', icon: <StatusDot status="thirsty" /> },
+    { value: 'FERTILIZE' as const, label: 'Needs fertiliser', icon: <StatusDot status="fertilize" /> },
+    { value: 'WEED' as const, label: 'Needs grass removal', icon: <StatusDot status="weed" /> },
     { value: 'HEALTHY' as const, label: 'Healthy', icon: <StatusDot status="healthy" /> },
     ...(isSignedIn ? [{ value: 'MINE' as const, label: 'Mine' }] : []),
   ];

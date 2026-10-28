@@ -4,7 +4,7 @@ import { db } from '../../common/db';
 import { trees, careLogs, users } from '../../common/db/schema';
 import { and, asc, desc, eq, gte, ilike, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { getAuth } from '@clerk/express';
-import { needsWater } from '../../common/utils/careSchedule';
+import { TREE_STATUSES, needsCare, needsWater, statusCondition } from '../../common/utils/careSchedule';
 import { CloudinaryService } from '../../common/services/cloudinaryService';
 import { z } from 'zod';
 import { isUuid, latitudeSchema, longitudeSchema } from '../../common/utils/validation';
@@ -461,7 +461,7 @@ const browseQuery = z.object({
   lat: latitudeSchema.optional(),
   lng: longitudeSchema.optional(),
   radius: z.coerce.number().positive().max(100_000).optional(),
-  status: z.enum(['all', 'thirsty', 'healthy']).default('all'),
+  status: z.enum(TREE_STATUSES).default('all'),
   mine: z.enum(['true', 'false']).optional(),
   search: z.string().trim().max(200).optional(),
   sort: z.enum(['nearest', 'newest', 'oldest', 'thirsty']).optional(),
@@ -479,7 +479,7 @@ const distanceFrom = (lat: number, lng: number) =>
 
 /**
  * GET /trees/browse: one page of trees.
- * Filters: status (needs water / healthy), radius around lat/lng, mine (signed in), search
+ * Filters: status (needs water / fertiliser / grass removal, or healthy: needs none), radius around lat/lng, mine (signed in), search
  * (name, kind or address). Sorted nearest first when lat/lng are given, otherwise newest planted.
  * With mine=true it also returns `summary` (how many of your trees there are, and how many need water).
  */
@@ -511,9 +511,9 @@ export const browseTrees = async (req: Request, res: Response) => {
     if (distance && radius) base.push(sql`${distance} <= ${radius}`);
 
     const filters = [...base];
-    // Only verified trees can need water
-    if (status === 'thirsty') filters.push(and(isThirsty, eq(trees.verificationStatus, 'VERIFIED'))!);
-    if (status === 'healthy') filters.push(and(sql`NOT ${needsWater}`, eq(trees.verificationStatus, 'VERIFIED'))!);
+    // Only verified trees can need care
+    const byStatus = statusCondition(status);
+    if (byStatus) filters.push(and(byStatus, eq(trees.verificationStatus, 'VERIFIED'))!);
     const where = filters.length ? and(...filters) : undefined;
 
     const order =
@@ -538,7 +538,12 @@ export const browseTrees = async (req: Request, res: Response) => {
       // Your totals ignore the status filter, so the stat tiles stay the same while you switch it
       userId
         ? db
-            .select({ total: sql<number>`count(*)`, thirsty: sql<number>`count(*) filter (where ${isThirsty} and ${trees.verificationStatus} = 'VERIFIED')` })
+            .select({
+              total: sql<number>`count(*)`,
+              thirsty: sql<number>`count(*) filter (where ${isThirsty} and ${trees.verificationStatus} = 'VERIFIED')`,
+              // Needs water, fertiliser or grass removal (the rest of the verified trees are healthy)
+              needy: sql<number>`count(*) filter (where ${needsCare} and ${trees.verificationStatus} = 'VERIFIED')`,
+            })
             .from(trees)
             .where(eq(trees.userId, userId))
         : Promise.resolve(null),
@@ -556,7 +561,7 @@ export const browseTrees = async (req: Request, res: Response) => {
       page,
       limit,
       totalPages: Math.max(1, Math.ceil(total / limit)),
-      ...(summary ? { summary: { total: Number(summary[0].total), thirsty: Number(summary[0].thirsty) } } : {}),
+      ...(summary ? { summary: { total: Number(summary[0].total), thirsty: Number(summary[0].thirsty), needy: Number(summary[0].needy) } } : {}),
     });
   } catch (error) {
     console.error('Error browsing trees:', error);

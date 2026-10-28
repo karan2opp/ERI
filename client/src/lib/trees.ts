@@ -10,21 +10,46 @@ export const MAX_GPS_ACCURACY_M = 20;
 
 export const isPending = (tree: Pick<Tree, 'verificationStatus'>) => tree.verificationStatus === 'PENDING';
 
-export type TreeStatus = 'healthy' | 'thirsty';
+/** What a tree can need, most urgent first: water, then fertiliser, then the grass around it removed. */
+export type TreeNeed = 'thirsty' | 'fertilize' | 'weed';
+export type TreeStatus = 'healthy' | TreeNeed;
 
 export const hoursSinceWatered = (tree: Pick<Tree, 'lastWateredAt'>): number | null =>
   tree.lastWateredAt ? (Date.now() - new Date(tree.lastWateredAt).getTime()) / 3_600_000 : null;
 
-/** A tree needs water once it has gone longer than its own watering interval without it. */
-export const treeStatus = (tree: Pick<Tree, 'lastWateredAt'> & { waterEveryDays?: number }): TreeStatus => {
-  const hours = hoursSinceWatered(tree);
-  const limitHours = (tree.waterEveryDays ?? DEFAULT_WATER_EVERY_DAYS) * 24;
-  return hours === null || hours > limitHours ? 'thirsty' : 'healthy';
+type CareFields = Pick<Tree, 'lastWateredAt'> &
+  Partial<Pick<Tree, 'plantedAt' | 'lastFertilizedAt' | 'lastWeededAt' | 'waterEveryDays' | 'fertilizeEveryDays' | 'weedEveryDays'>>;
+
+const DAY_MS = 24 * 3_600_000;
+
+/** Past its interval since the last time, or since planting if it never happened (the server uses the same rule). */
+const overdue = (lastDoneAt: string | null | undefined, plantedAt: string | undefined, everyDays: number | undefined): boolean => {
+  const from = lastDoneAt ?? plantedAt;
+  return Boolean(from && everyDays) && new Date(from!).getTime() + everyDays! * DAY_MS < Date.now();
 };
+
+/**
+ * Everything a tree needs right now, most urgent first. Water: gone longer than its own watering interval
+ * without it, and a tree never watered needs it at once. Fertiliser and grass removal: their intervals have
+ * passed since the last time, or since planting.
+ */
+export const treeNeeds = (tree: CareFields): TreeNeed[] => {
+  const needs: TreeNeed[] = [];
+  const hours = hoursSinceWatered(tree);
+  if (hours === null || hours > (tree.waterEveryDays ?? DEFAULT_WATER_EVERY_DAYS) * 24) needs.push('thirsty');
+  if (overdue(tree.lastFertilizedAt, tree.plantedAt, tree.fertilizeEveryDays)) needs.push('fertilize');
+  if (overdue(tree.lastWeededAt, tree.plantedAt, tree.weedEveryDays)) needs.push('weed');
+  return needs;
+};
+
+/** The tree's main status: its most urgent need, or healthy when it needs nothing. */
+export const treeStatus = (tree: CareFields): TreeStatus => treeNeeds(tree)[0] ?? 'healthy';
 
 export const STATUS_LABEL: Record<TreeStatus, string> = {
   healthy: 'Healthy',
   thirsty: 'Needs water',
+  fertilize: 'Needs fertiliser',
+  weed: 'Needs grass removal',
 };
 
 /** "just now", "5 min ago", "3 h ago", "2 days ago", then a date. */

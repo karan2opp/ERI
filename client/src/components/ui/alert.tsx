@@ -1,13 +1,15 @@
 import * as React from 'react';
-import { AlertCircle, CheckCircle2, Droplets, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Droplets, Info, Shovel, Sprout } from 'lucide-react';
 import { cn } from '../../lib/cn';
 
-type Tone = 'success' | 'error' | 'thirsty' | 'info';
+type Tone = 'success' | 'error' | 'thirsty' | 'fertilize' | 'weed' | 'info';
 
 const TONE: Record<Tone, string> = {
   success: 'bg-leaf/12',
   error: 'bg-destructive/12 text-destructive',
   thirsty: 'bg-thirsty/12',
+  fertilize: 'bg-fertilize/12',
+  weed: 'bg-weed/12',
   info: 'bg-muted',
 };
 
@@ -15,6 +17,8 @@ const ICON: Record<Tone, React.ReactNode> = {
   success: <CheckCircle2 className="text-leaf" aria-hidden="true" />,
   error: <AlertCircle aria-hidden="true" />,
   thirsty: <Droplets className="text-thirsty" aria-hidden="true" />,
+  fertilize: <Sprout className="text-fertilize" aria-hidden="true" />,
+  weed: <Shovel className="text-weed" aria-hidden="true" />,
   info: <Info className="text-muted-foreground" aria-hidden="true" />,
 };
 

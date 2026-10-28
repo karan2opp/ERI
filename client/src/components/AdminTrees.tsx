@@ -16,7 +16,7 @@ import { Pager } from './ui/pager';
 import { ExpandableText } from './ui/expandable-text';
 import { CareSchedule, CareSummary, CareTimeline, TreeAge, useCareHistory } from './TreeLife';
 
-type Status = 'all' | 'thirsty' | 'healthy';
+type Status = 'all' | 'thirsty' | 'fertilize' | 'weed' | 'healthy';
 
 const DATE_FIELDS: { value: TreeDateField; label: string }[] = [
   { value: 'planted', label: 'Planted' },
@@ -27,6 +27,8 @@ const DATE_FIELDS: { value: TreeDateField; label: string }[] = [
 const STATUSES: { value: Status; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'thirsty', label: 'Needs water' },
+  { value: 'fertilize', label: 'Needs fertiliser' },
+  { value: 'weed', label: 'Needs grass removal' },
   { value: 'healthy', label: 'Healthy' },
 ];
 

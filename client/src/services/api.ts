@@ -55,6 +55,8 @@ export interface TreePin {
   lat: number;
   lng: number;
   name: string;
+  /** The most urgent thing it needs (water, then fertiliser, then grass removal); null when healthy */
+  needs?: 'thirsty' | 'fertilize' | 'weed' | null;
   needsWater: boolean;
 }
 
@@ -63,7 +65,10 @@ export interface PinCluster {
   lat: number;
   lng: number;
   count: number;
+  /** How many of the trees show each pin: needs water, needs fertiliser, needs grass removal (a tree counts once, as its first need) */
   thirsty: number;
+  fertilize?: number;
+  weed?: number;
   id?: string;
   name?: string;
 }
@@ -75,7 +80,7 @@ export type PinsResult = { kind: 'trees'; data: TreePin[]; empty: boolean } | { 
  * of you. Zoomed out, or with too many trees, the server sends clusters instead.
  */
 export const fetchTreePins = async (
-  params: { bbox?: string; zoom: number; lat?: number; lng?: number; radius?: number; status: 'all' | 'thirsty' | 'healthy'; mine?: boolean; v?: number },
+  params: { bbox?: string; zoom: number; lat?: number; lng?: number; radius?: number; status: TreeStatusFilter; mine?: boolean; v?: number },
   signal?: AbortSignal
 ): Promise<PinsResult> => {
   const res = await api.get('/trees/pins', {
@@ -220,7 +225,7 @@ export const fetchCareHistory = async (treeId: string, page = 1, limit = 10): Pr
   return res.data;
 };
 
-export type TreeStatusFilter = 'all' | 'thirsty' | 'healthy';
+export type TreeStatusFilter = 'all' | 'thirsty' | 'fertilize' | 'weed' | 'healthy';
 export type TreeSort = 'nearest' | 'newest' | 'oldest' | 'thirsty';
 
 /**
@@ -237,7 +242,7 @@ export const browseTrees = async (params: {
   mine?: boolean;
   search?: string;
   sort?: TreeSort;
-}): Promise<Paged<Tree & { distance?: number }> & { summary?: { total: number; thirsty: number } }> => {
+}): Promise<Paged<Tree & { distance?: number }> & { summary?: { total: number; thirsty: number; needy?: number } }> => {
   const res = await api.get('/trees/browse', {
     params: {
       page: params.page,
@@ -348,7 +353,7 @@ export type TreeDateField = 'planted' | 'watered' | 'cared';
 /**
  * Admin tree search: name/kind/address text, a date range (from the start of `from` to the end of
  * `to`, in the admin's own time zone) on when trees were planted, last watered or last cared for,
- * and needs-water/healthy.
+ * and what they need (water, fertiliser, grass removal) or healthy.
  */
 export const fetchAdminTrees = async (params: {
   page: number;
@@ -357,7 +362,7 @@ export const fetchAdminTrees = async (params: {
   dateField?: TreeDateField;
   from?: string; // YYYY-MM-DD
   to?: string; // YYYY-MM-DD
-  status?: 'all' | 'thirsty' | 'healthy';
+  status?: TreeStatusFilter;
   /** Only trees planted by this user */
   userId?: string;
 }): Promise<{ data: Tree[]; total: number; page: number; totalPages: number }> => {

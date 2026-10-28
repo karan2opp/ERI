@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { normalizePhone } from '../../common/utils/phone';
 import { ROLES, isAdminRole } from '../../common/auth/roles';
 import { DRIVE_PHOTO_LIMIT_MAX, DRIVE_PHOTO_LIMIT_MIN, IMPACT_MAX, getSettings, updateSettings } from '../../common/services/settingsService';
-import { needsWater } from '../../common/utils/careSchedule';
+import { TREE_STATUSES, statusCondition } from '../../common/utils/careSchedule';
 import type { AuthenticatedRequest } from '../../common/middlewares/authMiddleware';
 
 // Access is enforced by requireAuth + requireAdmin in adminRoutes.
@@ -80,7 +80,7 @@ const treeFilters = z.object({
   // Range as timestamps: the client sends the start of its local "from" day and the end of its "to" day
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  status: z.enum(['all', 'thirsty', 'healthy']).default('all'),
+  status: z.enum(TREE_STATUSES).default('all'),
   // Only trees planted by this user
   userId: z.string().max(255).optional(),
 });
@@ -88,7 +88,7 @@ const treeFilters = z.object({
 /**
  * GET /admin/trees
  * Search by name/species, filter by a date range on when trees were planted, last watered or
- * last cared for, and by needs-water/healthy. Sorted by the chosen date, newest first.
+ * last cared for, and by what it needs (water, fertiliser, grass removal) or healthy. Sorted by the chosen date, newest first.
  */
 export const getAdminTrees = async (req: Request, res: Response) => {
   try {
@@ -108,9 +108,9 @@ export const getAdminTrees = async (req: Request, res: Response) => {
     if (userId) filters.push(eq(trees.userId, userId));
     if (from) filters.push(gte(column, from));
     if (to) filters.push(lt(column, to));
-    // Each tree is judged against its own watering interval
-    if (status === 'thirsty') filters.push(needsWater);
-    if (status === 'healthy') filters.push(sql`NOT ${needsWater}`);
+    // Each tree is judged against its own intervals
+    const byStatus = statusCondition(status);
+    if (byStatus) filters.push(byStatus);
     const where = filters.length ? and(...filters) : undefined;
 
     const [rows, [{ count }]] = await Promise.all([

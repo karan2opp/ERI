@@ -16,11 +16,13 @@ Defined in `src/index.css` as CSS variables and exposed to Tailwind via `@theme 
 | `secondary` / `accent` | `#e9f2e1` / `#d2e7c8` logo highlight | `#1f2e25` / `#29392f` | Secondary pills and chips, sheet handle, hover |
 | `muted` / `input` | `#f5f9f1` / `#f0f6ea` | `#18251d` / `#1f2e25` | Quiet panels, filled inputs |
 | `muted-foreground` | `#5b6b55` | `#9dae9f` | Secondary text |
-| `thirsty` | `#2f7fb8` water blue | `#6ab0e3` | Trees that need water, always shown with a water-drop icon |
+| `thirsty` | `#d32f2f` alert red | `#ff6b66` | Trees that need water, always shown with a water-drop icon |
+| `fertilize` | `#c96a00` orange | `#f0a04b` | Trees that need fertiliser, shown with a sprout icon |
+| `weed` | `#00796b` teal | `#4db6ac` | Trees that need the grass around them removed, shown with a shovel icon |
 | `warning` | `#e09a1c` amber | `#f0b13e` | Low health on the health bar |
 | `water` | `#2f7fb8` | `#6ab0e3` | Water actions, people walking live |
 | `bark` | `#7a5638` | `#c49a6c` | Planting drives |
-| `you` | `#e53935` red | `#ff6b66` | Your own location on the map: a red dot with a white ring, pulse, accuracy circle and a direction cone. Nothing else on the map is red, so you never mistake yourself for a tree |
+| `you` | `#1a73e8` blue | `#5aa9ff` | Your own location on the map: a blue dot with a white ring, pulse, accuracy circle and a direction cone. Red is kept for trees that need water, so you never mistake yourself for a thirsty tree |
 | `destructive` | `#c63d21` rust | `#f0714f` | Remove, End, errors |
 
 Shadows: `shadow-float` for floating pills and buttons, `shadow-sheet` for sheets and cards over the map. Nothing else gets a shadow. No gradients.
@@ -48,7 +50,7 @@ Theme is **Light by default**. People can pick Dark in the profile menu. `index.
 |---|---|
 | `Button` | `default` globe-green pill, `secondary` pale-leaf pill, `outline`, `ghost`, `destructive` (tinted rust), `danger` (solid rust: End, confirm remove), `floating` (map controls) |
 | `Chips` | Single choice: filters, care type, species, theme. Selected = solid globe green |
-| `Badge`, `StatusDot` | Healthy (leaf dot) / Needs water (blue water drop) / Planting drive / Sample |
+| `Badge`, `StatusDot` | Healthy (leaf dot) / Needs water (red water drop) / Needs fertiliser (orange sprout) / Needs grass removal (teal shovel) / Planting drive / Sample |
 | `Alert` | Inline feedback: `success`, `error`, `thirsty`, `info` |
 | `Field`, `Input`, `Textarea` | Label above, filled input, hint below |
 | `Page`, `TopBar` | Full-screen pages: back arrow + title, optional sticky footer for the one main action |
@@ -89,7 +91,7 @@ Phone                                   Desktop (md+)
 ```
 
 - **Sheet** (`MapSheet`): drag or tap the handle between one line, 46% and 88% of the screen. Shows trees near you (search, distance chips, list), a selected tree, a drive, or directions.
-- **Pins**: healthy trees are 36 px leaf-green circles; trees that need water are a **blue water drop** with the tree inside; drives are bark circles. A selected pin grows and gets a foreground outline.
+- **Pins**: healthy trees are 36 px leaf-green circles; trees that need water are a **red water drop** with the tree inside, trees that need fertiliser an **orange circle with a sprout** and trees whose grass needs removing a **teal circle with a shovel** (a tree that needs several shows water first, then fertiliser, then grass; filtering by one need shows that need's marker); drives are bark circles. Zoomed-out bubbles carry a badge with how many trees need care, in the colour of the most urgent need. The filter chips (All, Needs water, Needs fertiliser, Needs grass removal, Healthy, Mine) scroll sideways when they don't fit. A selected pin grows and gets a foreground outline.
 - **Navigation**: globe-green card on top ("131 m · Walk to …"), sheet with minutes in leaf green, End (solid rust) and Google Maps.
 - **Choosing a location**: the pin stays in the middle and the map moves under it ("Where is the tree?").
 - **Pages** (Plant, Edit, My trees, Account, Admin) are full screen and live in browser history, so the phone's back button closes them.

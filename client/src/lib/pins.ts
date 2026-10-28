@@ -1,6 +1,6 @@
 import type { TreePin } from '../services/api';
 import type { Tree } from '../types';
-import { treeStatus } from './trees';
+import { treeNeeds, type TreeNeed } from './trees';
 
 /** What the map is showing: its edges and zoom level. */
 export interface MapView {
@@ -29,4 +29,10 @@ export function snapToTiles(view: MapView): string {
 }
 
 /** A sample (demo) tree as a map pin. */
-export const pinFromTree = (t: Tree): TreePin => ({ id: t.id, lat: t.latitude, lng: t.longitude, name: t.name, needsWater: treeStatus(t) === 'thirsty' });
+export const pinFromTree = (t: Tree): TreePin => {
+  const needs = treeNeeds(t)[0] ?? null;
+  return { id: t.id, lat: t.latitude, lng: t.longitude, name: t.name, needs, needsWater: needs === 'thirsty' };
+};
+
+/** What a pin shows. A server from before fertiliser and grass pins only says whether the tree needs water. */
+export const pinNeed = (pin: TreePin): TreeNeed | null => (pin.needs !== undefined ? pin.needs : pin.needsWater ? 'thirsty' : null);
